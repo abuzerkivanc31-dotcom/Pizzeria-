@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pizza & Baguettehaus am Königspalast – Krefeld</title>
+<meta name="description" content="Pizza, Baguettes und Salate in Krefeld direkt an der YAYLA Arena. Öffnungszeiten, Eventtage, Speisekarte, Bestellung per Telefon, WhatsApp, Lieferando, Uber Eats und Wolt.">
+<style>
+:root{color-scheme:dark;--bg:#0f0f10;--card:#18181a;--line:#2a2a2d;--text:#f4f1ea;--mute:#a8a49b;--red:#e8452c;--gold:#f5b942;--green:#3ddc84}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+nav{position:sticky;top:0;z-index:10;background:rgba(15,15,16,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{font-weight:800;letter-spacing:-.02em;font-size:1.05rem}.logo span{color:var(--red)}
+nav ul{display:flex;gap:22px;list-style:none;font-size:.92rem;color:var(--mute);align-items:center}
+nav ul a:hover{color:var(--text)}
+.navown,footer button{border:1px solid var(--line);background:none;color:var(--mute);border-radius:999px;padding:6px 12px;font:inherit;font-size:.85rem;cursor:pointer}
+.navown:hover{color:var(--text);border-color:var(--gold)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:999px;font-weight:700;font-size:.95rem;border:1px solid var(--line);transition:.2s;cursor:pointer;background:none;color:var(--text);font-family:inherit}
+.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.btn.primary:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.btn.ghost:hover{border-color:var(--text)}
+.btn.wa{background:#25d366;border-color:#25d366;color:#06240f}
+.orderstrip{position:sticky;top:64px;z-index:9;background:#1b1b1e;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.orderstrip .wrap{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:center;justify-content:space-between;padding-top:18px;padding-bottom:18px}
+.os-title b{display:block;font-size:1.15rem}.os-title span{color:var(--mute);font-size:.88rem}
+.os-btns{display:flex;flex-wrap:wrap;gap:10px}
+.orderstrip .btn{padding:10px 18px}
+.hero{padding:90px 0 70px;background:linear-gradient(90deg,rgba(15,15,16,.96) 0%,rgba(15,15,16,.82) 45%,rgba(15,15,16,.35) 100%),url(img/stock-pizza-slate.jpg) center/cover}
+.hero h1{font-size:clamp(2.4rem,7vw,5rem);line-height:1.02;letter-spacing:-.04em;font-weight:900;max-width:14ch}
+.hero h1 em{font-style:normal;color:var(--red)}
+.hero p.lead{color:var(--mute);font-size:1.15rem;max-width:52ch;margin:22px 0 30px}
+.cta{display:flex;flex-wrap:wrap;gap:12px}
+.status{margin-top:36px;display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 20px;max-width:600px}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--mute);margin-top:6px;flex:none}
+.status.open .dot{background:var(--green);animation:pulse 2s infinite}
+.status.closed .dot{background:var(--red)}
+.status.event .dot,.status.unknown .dot{background:var(--gold);animation:pulse2 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.6)}100%{box-shadow:0 0 0 14px transparent}}
+@keyframes pulse2{0%{box-shadow:0 0 0 0 rgba(245,185,66,.6)}100%{box-shadow:0 0 0 14px transparent}}
+.status h3{font-size:1.05rem}.status p{color:var(--mute);font-size:.9rem}
+.status a.call{display:inline-block;margin-top:8px;color:var(--gold);font-weight:700;font-size:.9rem;text-decoration:underline}
+section{padding:80px 0}
+h2{font-size:clamp(1.8rem,4vw,2.6rem);letter-spacing:-.03em;margin-bottom:10px}
+.sub{color:var(--mute);margin-bottom:36px;max-width:60ch}
+.howto{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;color:var(--mute);font-size:.9rem;margin-bottom:30px;max-width:70ch}
+.howto b{color:var(--text)}
+.cat{margin-bottom:54px}
+.cat h3{font-size:1.7rem;letter-spacing:-.02em;margin-bottom:4px;color:var(--gold)}
+.cat .note{color:var(--mute);font-size:.88rem;margin-bottom:14px}
+.catgrid{display:grid;grid-template-columns:1.5fr 1fr;gap:26px;align-items:start}
+.catgrid.one{grid-template-columns:1fr}
+@media(max-width:820px){.catgrid{grid-template-columns:1fr}}
+.items{display:flex;flex-direction:column}
+.it{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line)}
+.it b{font-weight:700}.it small{display:block;color:var(--mute);font-size:.84rem;line-height:1.35}
+.buy{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;align-items:center}
+.add{border:1px solid var(--line);background:#222226;color:var(--text);padding:7px 13px;border-radius:999px;font:inherit;font-weight:700;font-size:.88rem;cursor:pointer;white-space:nowrap;transition:.15s}
+.add span{color:var(--gold);margin-left:4px}
+.add:hover{border-color:var(--gold)}.add:active{transform:scale(.95)}
+.add.ok{background:var(--gold);color:#1b1300}.add.ok span{color:#1b1300}
+.pics{display:grid;gap:10px}
+.pics.g2{grid-template-columns:1fr 1fr}
+.pics img{width:100%;border-radius:18px;display:block;object-fit:cover;aspect-ratio:4/3;background:#111}
+.pics img.own{border-radius:0;background:none;-webkit-mask-image:radial-gradient(ellipse 72% 72% at 50% 50%,#000 60%,transparent 100%);mask-image:radial-gradient(ellipse 72% 72% at 50% 50%,#000 60%,transparent 100%)}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:.84rem;color:var(--mute)}
+.chip b{color:var(--gold)}
+.events{display:flex;flex-direction:column;gap:10px}
+.ev{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px}
+.ev b{display:block}.ev small{color:var(--mute)}
+.ev .tag{color:var(--gold);font-weight:700;font-size:.85rem;align-self:center;text-align:right}
+.ev.today{border-color:var(--gold)}
+.warn{background:var(--card);border:1px solid var(--gold);border-radius:14px;padding:14px 18px;margin-bottom:18px;font-size:.95rem}
+.two{display:grid;gap:30px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+table{width:100%;border-collapse:collapse}
+td{padding:10px 0;border-bottom:1px solid var(--line)}td:last-child{text-align:right;color:var(--mute)}
+tr.now td{color:var(--gold);font-weight:700}
+.rev{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.rev blockquote{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:22px}
+.rev .stars{color:var(--gold);margin-bottom:8px;letter-spacing:2px}
+.rev cite{display:block;margin-top:10px;font-style:normal;color:var(--mute);font-size:.82rem}
+.score{display:flex;align-items:baseline;gap:12px;margin-bottom:24px}.score b{font-size:3rem;color:var(--gold)}
+.order{background:linear-gradient(135deg,#2a120d,#18181a);border:1px solid var(--line);border-radius:28px;padding:48px 32px;text-align:center}
+.order .cta{justify-content:center;margin-top:24px}
+footer{border-top:1px solid var(--line);padding:36px 0;color:var(--mute);font-size:.88rem}
+footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.fab{position:fixed;right:18px;bottom:84px;z-index:20;display:flex;flex-direction:column;gap:10px}
+.fab a{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;font-size:1.5rem;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#cartbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:30;display:none}
+#cartbar.show{display:block}
+#cartbar button{background:var(--red);color:#fff;border:0;border-radius:999px;padding:14px 26px;font:inherit;font-weight:800;font-size:1rem;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+/* Dialoge */
+dialog{margin:auto;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:22px;padding:26px;max-width:560px;width:94%;max-height:92vh;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.7)}
+dialog h3{margin-bottom:6px}dialog p{color:var(--mute);font-size:.9rem;margin-bottom:14px}
+dialog input[type=text],dialog input[type=password],dialog input[type=number],dialog textarea{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:#0f0f10;color:var(--text);font:inherit;margin-bottom:12px}
+dialog textarea{min-height:60px}
+dialog label.l{display:block;font-size:.85rem;color:var(--mute);margin:4px 0}
+dialog .col{display:flex;flex-direction:column;gap:10px}
+.msg{margin-top:12px;font-size:.88rem;color:var(--gold)}
+.legal{background:#221a0d;border:1px solid var(--gold);border-radius:12px;padding:12px 14px;font-size:.86rem;margin:12px 0}
+.radio{display:flex;gap:10px;margin-bottom:12px}
+.radio label{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;cursor:pointer}
+.radio input{display:none}
+.radio input:checked+span{color:var(--gold);font-weight:800}
+.cl{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.cl .n{font-weight:700}.cl .n small{display:block;color:var(--mute);font-weight:400;font-size:.82rem}
+.cl .p{font-weight:700;text-align:right}
+.cl .q{display:flex;align-items:center;gap:8px}
+.cl .q button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#222226;color:var(--text);cursor:pointer;font-size:1.1rem;line-height:1}
+.cl input{grid-column:1/3;padding:8px 12px!important;margin:0!important;font-size:.88rem!important}
+.sum{display:flex;justify-content:space-between;font-weight:800;font-size:1.15rem;padding:14px 0}
+/* Auswahl */
+.og{margin:14px 0 6px}
+.og h4{font-size:1rem;margin-bottom:2px}.og .hint{color:var(--mute);font-size:.82rem;margin-bottom:8px}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opts label{border:1px solid var(--line);background:#222226;border-radius:999px;padding:7px 13px;font-size:.88rem;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.opts label:has(input:checked){border-color:var(--gold);background:#2b2412;color:var(--gold)}
+.opts input{accent-color:#f5b942}
+.opts small{color:var(--mute)}
+.ot{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:800;font-size:1.1rem;padding:14px 0 6px}
+.pr-row{display:grid;grid-template-columns:1fr 92px 92px;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+.pr-row input{margin:0!important;padding:7px 9px!important}
+.pr-h{color:var(--gold);font-weight:800;margin-top:14px}
+.pr-th{font-size:.75rem;color:var(--mute);position:sticky;top:-26px;background:var(--card);padding:6px 0;z-index:2}
+/* Bestellansicht (Vollbild) */
+dialog.full{max-width:960px;width:100%;height:100vh;height:100dvh;max-height:none;border-radius:0;padding:0;border:0;overflow:auto;display:none}
+dialog.full[open]{display:block}
+.mh{position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px;background:#131315;border-bottom:1px solid var(--line)}
+.mh b{font-size:1.15rem}
+.mh .x{border:1px solid var(--line);background:#222226;color:var(--text);border-radius:999px;padding:8px 14px;font:inherit;font-weight:700;cursor:pointer}
+.mnav{position:sticky;top:57px;z-index:4;display:flex;gap:8px;overflow-x:auto;padding:10px 18px;background:#131315;border-bottom:1px solid var(--line);scrollbar-width:none}
+.mnav button{flex:none;border:1px solid var(--line);background:#1d1d20;color:var(--text);border-radius:999px;padding:7px 14px;font:inherit;font-size:.88rem;font-weight:700;cursor:pointer}
+.mnav button:hover{border-color:var(--gold)}
+.mbody{padding:18px 18px 110px}
+.mbody .cat{scroll-margin-top:120px}
+.mbar{position:sticky;bottom:0;z-index:5;display:none;padding:12px 18px;background:linear-gradient(transparent,#0f0f10 40%)}
+.mbar.show{display:block}
+.mbar button{width:100%;background:var(--red);color:#fff;border:0;border-radius:999px;padding:15px;font:inherit;font-weight:800;font-size:1rem;cursor:pointer;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.big{font-size:1.1rem;padding:16px 28px}
+.ctasec{padding:36px 0}
+.ctabox{background:linear-gradient(135deg,#2a120d,#18181a);border:1px solid var(--line);border-radius:26px;padding:34px 28px;display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:center}
+.ctabox h2{margin:0}.ctabox p{color:var(--mute);margin:4px 0 0}
+.pm{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:6px 0 2px;font-size:.9rem}
+.pm b{color:var(--gold)}
+@media(max-width:700px){nav ul li:not(:last-child){display:none}.hero{padding-top:50px}}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="logo" href="#top">Pizza & Baguettehaus <span>am Königspalast</span></a>
+  <ul><li><a href="#status">Geöffnet?</a></li><li><a href="#karte">Speisekarte</a></li><li><a href="#events">Eventtage</a></li><li><a href="#bewertungen">Bewertungen</a></li><li><a href="#kontakt">Kontakt</a></li><li><button class="owner-open navown">🔑 Inhaber</button></li></ul>
+</div></nav>
+
+<div class="orderstrip"><div class="wrap">
+  <div class="os-title"><b>Jetzt bestellen</b><span>Direkt bei uns per WhatsApp oder über Lieferdienste</span></div>
+  <div class="os-btns">
+    <button class="btn wa open-menu">💬 Direkt bestellen (WhatsApp)</button>
+    <a class="btn primary" target="_blank" rel="noopener" href="https://www.lieferando.de/speisekarte/pizza-baguetteshaus-am-konigspalast">Lieferando</a>
+    <a class="btn primary" target="_blank" rel="noopener" href="https://www.ubereats.com/de/store/pizzaria-und-baguettehaus-am-konig-palast/-p_HXz_QXdSnzXxoAhyA9Q">Uber Eats</a>
+    <a class="btn primary" target="_blank" rel="noopener" href="https://wolt.com/de/deu/krefeld/restaurant/pizza-und-baguettehaus-am-knigspalast">Wolt</a>
+  </div>
+</div></div>
+
+<header class="hero" id="top"><div class="wrap">
+  <h1>Heiß, frisch, <em>direkt an der Arena.</em></h1>
+  <p class="lead">Pizza, Baguettes und Salate in Krefeld-West. Mittags für alle, an Eventtagen auch abends bis spät in die Nacht.</p>
+  <div class="cta">
+    <a class="btn primary" href="tel:+4921514546528">📞 Jetzt anrufen</a>
+    <a class="btn wa" href="https://wa.me/491724278201?text=Hallo%2C%20habt%20ihr%20heute%20ge%C3%B6ffnet%3F">💬 WhatsApp fragen</a>
+    <button class="btn ghost open-menu">🛒 Online bestellen</button>
+  </div>
+  <div class="status" id="status"><div class="dot"></div><div><h3 id="st-title">Lade Status …</h3><p id="st-text"></p><a class="call" href="tel:+4921514546528" id="st-call" hidden>📞 Kurz anrufen und nachfragen</a></div></div>
+</div></header>
+
+<section id="karte" class="ctasec"><div class="wrap"><div class="ctabox">
+  <div><h2>Speisekarte & Bestellung</h2><p>Pizza, Baguette, Pommes, Salate. Aussuchen und per WhatsApp bestellen.</p></div>
+  <button class="btn primary big open-menu">🍕 Speisekarte öffnen & bestellen</button>
+</div></div></section>
+
+<section id="zeiten"><div class="wrap two">
+  <div>
+    <h2>Öffnungszeiten</h2>
+    <p class="sub">Regulär unter der Woche. An Eventtagen zusätzlich am Nachmittag und Abend.</p>
+    <table id="hours"></table>
+    <p style="margin-top:14px;color:var(--mute);font-size:.9rem">Unsicher? Schreib uns kurz bei WhatsApp oder ruf an.</p>
+  </div>
+  <div id="kontakt">
+    <h2>Kontakt</h2>
+    <p class="sub">Westparkstraße 102<br>47803 Krefeld</p>
+    <div class="cta" style="flex-direction:column;align-items:flex-start">
+      <a class="btn primary" href="tel:+4921514546528">📞 02151 4546528</a>
+      <a class="btn wa" href="https://wa.me/491724278201">💬 WhatsApp +49 172 427 8201</a>
+      <a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=Westparkstra%C3%9Fe+102+47803+Krefeld">📍 Route in Google Maps</a>
+    </div>
+  </div>
+</div></section>
+
+<section id="events" style="background:#131315"><div class="wrap">
+  <h2>Eventtage an der YAYLA Arena</h2>
+  <div class="warn">📞 <b>An Eventtagen unbedingt kurz anrufen oder per WhatsApp fragen.</b> Wir öffnen etwa 4 Stunden vor Beginn. Wann wir schließen, ist nicht festgelegt: oft bis 2 oder 3 Uhr nachts, bei Konzerten und schlechtem Wetter auch früher.</div>
+  <div class="events" id="events-list"></div>
+  <p style="margin-top:18px;color:var(--mute);font-size:.9rem">Die Termine kommen automatisch aus dem <a style="color:var(--gold);text-decoration:underline" href="https://yayla-arena.de/veranstaltungskalender/" target="_blank" rel="noopener">Veranstaltungskalender der YAYLA Arena</a>.</p>
+</div></section>
+
+<section id="bewertungen" style="background:#131315"><div class="wrap">
+  <h2>Das sagen unsere Gäste</h2>
+  <div class="score"><b>8,9</b><span style="color:var(--mute)">von 10 bei Coolibri (36 Bewertungen)</span></div>
+  <div class="rev">
+    <blockquote><div class="stars">★★★★★</div>„Der beste Baguetteladen. Nach der Schule meine Rettung. Service 1A, Hygiene 1A, Geschmack 1A.“<cite>Cansu Y. · Google</cite></blockquote>
+    <blockquote><div class="stars">★★★★★</div>„Das Essen einfach nur geil und das Beste vor dem Spiel und nach dem Spiel.“<cite>Jan S. · Google</cite></blockquote>
+    <blockquote><div class="stars">★★★★★</div>„Der Lieferant war sehr nett und das Essen war noch ziemlich warm. Dort würde ich auf jeden Fall öfter bestellen!“<cite>Nikola L. · Google</cite></blockquote>
+    <blockquote><div class="stars">★★★★★</div>„Bester Chef, dieses Essen ist der Hammer. Kommt alle hier hin, ihr werdet es so lieben!“<cite>Jona R. · Google</cite></blockquote>
+    <blockquote>„Der Service ist sehr gut und die Mitarbeiter sehr nett. Zudem schmeckt das Essen auch 1A.“<cite>Gast · Google</cite></blockquote>
+    <blockquote>„Wirklich super leckere Baguetts.“<cite>Gast · Coolibri</cite></blockquote>
+  </div>
+</div></section>
+
+<section id="bestellen"><div class="wrap">
+  <div class="order">
+    <h2>Hunger? Bestell direkt.</h2>
+    <p class="sub" style="margin:0 auto">Per Telefon, WhatsApp oder über Lieferando, Uber Eats und Wolt.</p>
+    <div class="cta">
+      <a class="btn primary" target="_blank" rel="noopener" href="https://www.lieferando.de/speisekarte/pizza-baguetteshaus-am-konigspalast">Lieferando</a>
+      <a class="btn primary" target="_blank" rel="noopener" href="https://www.ubereats.com/de/store/pizzaria-und-baguettehaus-am-konig-palast/-p_HXz_QXdSnzXxoAhyA9Q">Uber Eats</a>
+      <a class="btn primary" target="_blank" rel="noopener" href="https://wolt.com/de/deu/krefeld/restaurant/pizza-und-baguettehaus-am-knigspalast">Wolt</a>
+      <a class="btn ghost" href="tel:+4921514546528">Telefonisch bestellen</a>
+      <button class="btn wa open-menu">💬 Direkt bei uns bestellen</button>
+    </div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <span>© <span id="yr"></span> Pizza & Baguettehaus am Königspalast, Krefeld</span>
+  <span><button class="owner-open">Inhaber-Login</button></span>
+</div></footer>
+
+<div class="fab">
+  <a href="https://wa.me/491724278201" style="background:#25d366" aria-label="WhatsApp">💬</a>
+  <a href="tel:+4921514546528" style="background:var(--red)" aria-label="Anrufen">📞</a>
+</div>
+
+<div id="cartbar"><button class="cartbtn"></button></div>
+
+<!-- Bestellansicht -->
+<dialog id="menu-dlg" class="full">
+  <div class="mh"><b>🍕 Speisekarte & Bestellung</b><button class="x" id="menu-close">✕ Schließen</button></div>
+  <div class="mnav" id="mnav"></div>
+  <div class="mbody">
+    <div class="howto"><b>So bestellst du:</b> Gerichte antippen, bei Bedarf Soßen und Extras wählen, unten den Warenkorb öffnen und die Bestellung per WhatsApp an uns schicken. Die Bestellung ist <b>nicht verbindlich</b>: Sie gilt erst, wenn wir sie in WhatsApp bestätigt haben.</div>
+    <div id="menu"></div>
+  </div>
+  <div class="mbar" id="mbar"><button class="cartbtn"></button></div>
+</dialog>
+
+<!-- Auswahl pro Gericht -->
+<dialog id="opt">
+  <h3 id="opt-title"></h3>
+  <div id="opt-body"></div>
+  <label class="l" for="opt-note">Anmerkung (kostet nichts extra, z. B. „ohne Zwiebeln“)</label>
+  <textarea id="opt-note" placeholder="Optional"></textarea>
+  <div class="ot"><span>Preis</span><span id="opt-total"></span></div>
+  <div class="col">
+    <button class="btn wa" id="opt-add">In den Warenkorb</button>
+    <button class="btn ghost" id="opt-cancel">Abbrechen</button>
+  </div>
+</dialog>
+
+<!-- Warenkorb -->
+<dialog id="cart">
+  <h3>🛒 Deine Bestellung</h3>
+  <p id="cart-status"></p>
+  <div id="cart-lines"></div>
+  <div class="sum"><span>Summe</span><span id="cart-total"></span></div>
+  <label class="l" for="c-name">Dein Name *</label>
+  <input type="text" id="c-name" placeholder="Vor- und Nachname" autocomplete="name">
+  <div class="radio">
+    <label><input type="radio" name="ctype" value="Abholung" checked><span>🏃 Abholung</span></label>
+    <label><input type="radio" name="ctype" value="Lieferung"><span>🛵 Lieferung</span></label>
+  </div>
+  <div id="c-addr-wrap" hidden><label class="l" for="c-addr">Lieferadresse *</label><input type="text" id="c-addr" placeholder="Straße, Hausnummer, Ort" autocomplete="street-address"></div>
+  <label class="l" for="c-time">Wunschzeit (optional)</label>
+  <input type="text" id="c-time" placeholder="z. B. 12:30 Uhr oder „so schnell wie möglich“">
+  <label class="l" for="c-note">Allgemeine Anmerkung (optional)</label>
+  <textarea id="c-note" placeholder="z. B. Allergien, Wechselgeld …"></textarea>
+  <div class="legal">⚠️ <b>So geht es weiter:</b> Du wirst direkt zu WhatsApp weitergeleitet. Deine Nachricht ist dort schon vorbereitet, du musst sie nur noch abschicken. <b>Verbindlich ist die Bestellung erst, wenn wir sie dir in WhatsApp bestätigt haben</b> (gilt für Abholung und Lieferung). Preise ohne Gewähr.</div>
+  <div class="col">
+    <button class="btn wa" id="cart-send">💬 Weiter zu WhatsApp</button>
+    <button class="btn ghost" id="cart-clear">Warenkorb leeren</button>
+    <button class="btn ghost" id="cart-close">Weiter auswählen</button>
+  </div>
+  <div class="msg" id="cart-msg"></div>
+</dialog>
+
+<!-- Inhaber -->
+<dialog id="owner">
+  <h3>Inhaber</h3>
+  <p id="owner-info"></p>
+  <input type="password" id="pin" placeholder="PIN" autocomplete="current-password">
+  <div class="pm" id="pm-info"></div>
+  <div class="col">
+    <button class="btn ghost" id="pm-switch"></button>
+    <button class="btn ghost" id="pm-auto" hidden>↩️ Preise wieder automatisch</button>
+    <button class="btn wa" data-set="open">✅ Wir haben jetzt geöffnet</button>
+    <button class="btn primary" data-set="closed">⛔ Wir haben geschlossen</button>
+    <button class="btn ghost" data-set="auto">↩️ Status wieder automatisch</button>
+    <button class="btn ghost" id="owner-prices">💶 Preise anpassen</button>
+    <button class="btn ghost" id="owner-close">Schließen</button>
+  </div>
+  <div class="msg" id="owner-msg"></div>
+</dialog>
+
+<dialog id="prices">
+  <h3>💶 Preise anpassen</h3>
+  <p>Hier kannst du alle Preise ändern. Sie gelten sofort auf der Seite. Links der Preis <b>Mo–Fr 07:00–14:30 Uhr</b>, rechts der Preis <b>zu allen anderen Zeiten</b> (Nachmittag, Abend, Eventtage, Wochenende). Die Seite wählt den richtigen Preis automatisch.</p>
+  <input type="password" id="pr-pin" placeholder="PIN">
+  <div id="pr-list"></div>
+  <div class="col" style="margin-top:14px">
+    <button class="btn wa" id="pr-save">Speichern</button>
+    <button class="btn ghost" id="pr-reset">Alle Preise auf Standard zurücksetzen</button>
+    <button class="btn ghost" id="pr-close">Schließen</button>
+  </div>
+  <div class="msg" id="pr-msg"></div>
+</dialog>
+
+<script src="events.js"></script>
+<script>
+/* ===== EINSTELLUNGEN ===== */
+const STATUS_API = "";   // Adresse des Status-Workers (siehe status-worker.js). Leer = Testmodus nur in diesem Browser.
+const DEMO_PIN = "1234"; // nur für den Testmodus ohne STATUS_API
+const WA_NUMBER = "491724278201";
+
+/* ===== AUSWAHL: Soßen, Zutaten ===== */
+const SAUCES=["Ketchup","Mayo","Curryketchup","Scharf (Sriracha)","Remoulade","Süßsauer","Joppie","Cocktail","Aioli","BBQ","Knoblauch","Öl"];
+const TOPS=[["Schinken","m"],["Salami","m"],["Sucuk","m"],["Chicken","m"],["Thunfisch","m"],["Mozzarella","m"],["Mais","o"],["Paprika","o"],["Jalapeños","o"],["Zwiebel","o"],["Champignons","o"],["Ananas","o"],["Frische Tomaten","o"],["Gekochtes Ei","o"]];
+const ADDON={m:{n:"Extra Fleisch-/Fisch-/Käsezutat",p:1.5},o:{n:"Extra sonstige Zutat",p:1},sauce:{n:"Weitere Soße (ab der dritten)",p:1},bake:{n:"Baguette überbacken",p:1}};
+
+/* ===== SPEISEKARTE =====
+   Eintrag: [Name, Beschreibung, Preise Mo–Fr 07:00–14:30 [], Preise sonst [], optional: Auswahl-Optionen]
+   Optionen: tops (Extra-Zutaten), sauce (Anzahl inklusive Soßen), bake (überbacken), fixed (immer enthalten), pick (Pflicht-Auswahl) */
+const MENU={
+ pizza:{title:"Pizzen",note:"Wähle die Größe: ca. 24 cm oder ca. 28 cm Durchmesser.",sizes:["24 cm","28 cm"],prefix:"Pizza ",pics:["stock-pizza-slate","pizzas"],opt:{tops:1},items:[
+  ["Margherita","",[5.5,6.5],[6.5,7.5]],["Cipolla","Zwiebeln",[6,7],[7,8]],["Funghi","Champignons",[6,7],[7,8]],["Salami","",[6.5,7.5],[7.5,8.5]],
+  ["Schinken","",[6.5,7.5],[7.5,8.5]],["Chicken","",[8,9],[9,10]],["Sucuk","",[8,9],[9,10]],["Tonno","Thunfisch",[6.5,7.5],[7.5,8.5]],
+  ["Monte","Schinken, Salami",[8,9],[9,10]],["Rustica","Salami, Champignons",[8.5,9.5],[8.5,9.5]],["Saporito","Chicken, Champignons",[7.5,8.5],[8.5,9.5]],
+  ["Hawaii","Schinken, Ananas",[7.5,8.5],[8.5,9.5]],["Tutto","Schinken, Salami, Champignons",[9,10],[10,11]],
+  ["Vegetale","Champignons, Paprika, Mais, gekochtes Ei",[9,10],[10,11]],["Capri","Champignons, Salami, Paprika, Zwiebeln",[8.5,9.5],[9.5,10.5]],
+  ["Texas Pizza BBQ","Chicken, BBQ-Soße, Mais",[9,10],[10,11]],["Pizza Mozzarella","Frische Tomatenscheiben, Mozzarella, Basilikum",[8.5,9.5],[9.5,10.5]]],
+  chips:["Extra-Zutaten: Fleisch, Fisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b> (bei der Auswahl wählbar)"]},
+ broetchen:{title:"Gefüllte Pizzabrötchen (Panini)",prefix:"Pizzabrötchen ",pics:["broetchen1","broetchen2"],opt:{tops:1},items:[
+  ["Pizzabrötchen mit Kräuterbutter","",[3.5],[4.5],false],["Gauda","",[4.5],[5.5]],["Thunfisch","",[5.5],[6.5]],["Salami","",[5.5],[6.5]],["Sucuk","",[6],[7]],
+  ["Chicken","",[6],[7]],["Schinken","",[5.5],[6.5]],["Mozzarella & frische Tomaten","",[6],[7]],["Schinken + Ananas","",[6],[7]],["Chicken BBQ Sauce","",[6.5],[7.5]]],
+  chips:["Extra-Zutaten: Fleisch, Fisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b>"]},
+ baguette:{title:"Baguette",note:"Eisbergsalat und Gurken sind enthalten. Dazu 2 Soßen inklusive, jede weitere +1,00 €.",prefix:"Baguette ",pics:["stock-baguette"],opt:{sauce:2,tops:1,bake:1},items:[
+  ["Thunfisch","",[5],[6]],["Salami","",[5],[6]],["Ei","",[5],[6]],["Gauda","",[5],[6]],["Mozzarella","",[5.5],[6.5]],["Schinken","",[5],[6]],
+  ["Sucuk","",[5.5],[6.5]],["Chicken","",[5.5],[6.5]],["Nuggets","",[5],[6]],["König","3 Beilagen",[8],[8]],["Veggie","",[5.5],[6.5]]],
+  chips:["Mit Käse überbacken <b>+1,00 €</b>","Extra-Zutaten ab <b>+1,00 €</b>"]},
+ pommes:{title:"Pommes & Nuggets",note:"Dazu 2 Soßen inklusive, jede weitere +1,00 €.",pics:["stock-nuggets"],opt:{sauce:2},items:[
+  ["Pommes klein","",[3],[3.5]],["Pommes groß","",[3.5],[4]],["Pomm Chicken","",[6],[7]],
+  ["Pommes Spezial","Mit Curryketchup und Mayo",[6],[6],{sauce:0,fixed:["Curryketchup","Mayo"],pick:{label:"Zwiebeln",options:["Röstzwiebeln","Rote Zwiebeln"]}}],
+  ["6er Nuggets","",[6],[6.5]],["9er Nuggets","",[8],[8.5]],["12er Nuggets","",[10],[10.5]]]},
+ bowl:{title:"Königs Bowl",pics:["bowl"],opt:{sauce:2,pick:{label:"Finish",options:["Süß","Scharf"]}},items:[
+  ["Königs Bowl","Pommes + Käse + Topping + Salat, Gurke, Tomaten. 2 Soßen inklusive.",[7.5],[8.5]]]},
+ salate:{title:"Salate",note:"Jeweils mit 1 Soße nach Wahl (bitte bei der Anmerkung eintragen).",pics:["salat1","salat2","salat3","salat4"],opt:false,items:[
+  ["Basic Salat","Eisberg, Tomate, Gurke, Zwiebel",[5.5],[5.5]],["König Salat","gebratene Hähnchenbrust, Eisberg, Tomate, Gurke, Zwiebel",[7],[7]],
+  ["Tonno Salat","Thunfisch, Eisberg, Tomate, Gurke, Zwiebel",[6.5],[6.5]],["Bauernsalat","Eisberg, Tomate, Gurke, Zwiebel, Schafskäse",[6.5],[6.5]],
+  ["Ei Salat","Ei, Eisberg, Tomate, Gurke, Zwiebel",[6.5],[6.5]]]}
+};
+const ORDER=["pizza","broetchen","baguette","pommes","bowl","salate"];
+
+/* ===== PREISE (Standard + Änderungen vom Inhaber) ===== */
+let PR={};   // {schlüssel:{d:Preis Mo–Fr 07–14:30, e:Preis sonst}}
+const eur=n=>n.toFixed(2).replace(".",",")+" €";
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+/* d = Preisliste Mo–Fr 07:00–14:30 (Schulzeit), e = alle anderen Zeiten (Eventzeit). Der Inhaber kann manuell auf die jeweils andere umschalten. */
+function autoMode(n){const m=n.getHours()*60+n.getMinutes(),d=n.getDay();return(d>=1&&d<=5&&m>=7*60&&m<14*60+30)?"d":"e"}
+let PMODE=null;
+function priceMode(){if(PMODE&&PMODE.until>Date.now()&&(PMODE.mode==="d"||PMODE.mode==="e"))return PMODE.mode;return autoMode(new Date())}
+function nextChange(){const now=new Date(),cur=autoMode(now);for(let t=now.getTime()+60000;t<now.getTime()+8*864e5;t+=60000){if(autoMode(new Date(t))!==cur)return t}return now.getTime()+16*36e5}
+const parse=k=>{const[c,i,s]=k.split("|");return{c,i:+i,s:+s}};
+function itemOf(k){const{c,i}=parse(k);return MENU[c].items[i]}
+function optOf(k){const{c}=parse(k),it=itemOf(k);return it[4]!==undefined?it[4]:MENU[c].opt}
+function basePrice(k){const{s}=parse(k),it=itemOf(k),m=priceMode(),o=PR[k]&&PR[k][m];return typeof o==="number"?o:it[m==="d"?2:3][s]}
+function addon(a){const o=PR["addon|"+a+"|0"];return o&&typeof o.d==="number"?o.d:ADDON[a].p}
+function extras(k,sel){
+  const o=optOf(k)||{};let t=0;
+  (sel.tops||[]).forEach(n=>{t+=addon(TOPS.find(x=>x[0]===n)[1])});
+  t+=Math.max(0,(sel.sauces||[]).length-(o.sauce||0))*addon("sauce");
+  if(sel.bake)t+=addon("bake");return t;
+}
+const unit=l=>basePrice(l.key)+extras(l.key,l.sel||{});
+function lineName(k){const{c,s}=parse(k),C=MENU[c],it=itemOf(k),pre=C.prefix||"";
+  const n=pre&&!it[0].toLowerCase().includes(pre.trim().toLowerCase())?pre+it[0]:it[0];return n+(C.sizes?" ("+C.sizes[s]+")":"")}
+function summary(l){
+  const o=optOf(l.key)||{},s=l.sel||{},r=[];
+  if(o.pick&&s.pick)r.push(`${o.pick.label}: ${s.pick}`);
+  if(o.fixed)r.push("Inklusive: "+o.fixed.join(", "));
+  if(s.sauces&&s.sauces.length)r.push("Soßen: "+s.sauces.join(", "));
+  if(s.tops&&s.tops.length)r.push("Extra: "+s.tops.join(", "));
+  if(s.bake)r.push("Überbacken");
+  return r;
+}
+
+/* ===== MENÜ ANZEIGEN ===== */
+const pics=l=>`<div class="pics ${l.length>1&&l.length!==3?"g2":""}">${l.map(p=>`<img loading="lazy" class="${p.startsWith("stock-")?"":"own"}" src="img/${p}.jpg" alt="">`).join("")}</div>`;
+const chips=c=>c?`<div class="chips">${c.map(x=>`<span class="chip">${x}</span>`).join("")}</div>`:"";
+function renderMenu(){
+  document.getElementById("menu").innerHTML=ORDER.map(ck=>{
+    const C=MENU[ck];
+    return `<div class="cat" id="cat-${ck}"><h3>${C.title}</h3>${C.note?`<p class="note">${C.note}</p>`:""}<div class="catgrid"><div><div class="items">${C.items.map((it,i)=>`<div class="it"><div><b>${it[0]}</b>${it[1]?`<small>${it[1]}</small>`:""}</div><div class="buy">${it[2].map((_,si)=>{const k=`${ck}|${i}|${si}`;return `<button class="add" data-key="${k}">${C.sizes?C.sizes[si]+" · ":""}${eur(basePrice(k))}<span>＋</span></button>`}).join("")}</div></div>`).join("")}</div>${chips(C.chips)}</div>${pics(C.pics)}</div></div>`;
+  }).join("");
+  $("mnav").innerHTML=ORDER.map(ck=>`<button data-go="${ck}">${MENU[ck].title.replace(/ \(.*\)/,"")}</button>`).join("");
+}
+document.addEventListener("click",e=>{const g=e.target.closest("[data-go]");if(g){const el=document.getElementById("cat-"+g.dataset.go);if(el)el.scrollIntoView({behavior:"smooth",block:"start"})}});
+
+/* ===== ZEITEN, EVENTS, STATUS ===== */
+const HOURS={1:["07:30","15:30"],2:["07:30","15:30"],3:["07:30","15:30"],4:["07:30","15:30"],5:["07:30","15:30"],0:null,6:null};
+const DAYS=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const mins=t=>{const[a,b]=t.split(":").map(Number);return a*60+b};
+const fmtDate=s=>new Date(s+"T12:00").toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"long"});
+let EVENTS=[], OVERRIDE=null;
+function computeStatus(){
+  const now=new Date(), today=ymd(now), nowM=now.getHours()*60+now.getMinutes(), dow=now.getDay();
+  const y=new Date(now);y.setDate(y.getDate()-1);
+  const evToday=EVENTS.filter(e=>e.date===today), evYest=EVENTS.filter(e=>e.date===ymd(y));
+  const reg=HOURS[dow], regOpen=reg&&nowM>=mins(reg[0])&&nowM<mins(reg[1]);
+  if(OVERRIDE&&OVERRIDE.state&&OVERRIDE.expires>Date.now()){
+    const t=new Date(OVERRIDE.set), hm=`${pad(t.getHours())}:${pad(t.getMinutes())}`;
+    return OVERRIDE.state==="open"
+      ?{s:"open",t:"Jetzt geöffnet",x:`Vom Inhaber bestätigt (${hm} Uhr). Wann wir schließen, kann sich je nach Veranstaltung ändern.`}
+      :{s:"closed",t:"Gerade geschlossen",x:`Vom Inhaber bestätigt (${hm} Uhr).`};
+  }
+  const live=evToday.find(e=>nowM>=mins(e.open)&&nowM<mins(e.start)+180);
+  if(regOpen&&!live)return{s:"open",t:"Jetzt geöffnet",x:"Heute bis "+reg[1]+" Uhr."+(evToday[0]?` Wegen „${evToday[0].title}“ öffnen wir am Nachmittag/Abend erneut, ab ca. ${evToday[0].open} Uhr.`:"")};
+  if(live)return{s:"event",t:"Eventtag: vermutlich geöffnet",x:`Wegen „${live.title}“ öffnen wir ab ca. ${live.open} Uhr. Wann wir schließen, steht nicht fest (oft bis 2–3 Uhr, bei Konzerten oder schlechtem Wetter früher).`,call:true};
+  const late=evToday.find(e=>nowM>=mins(e.start)+180)||(nowM<4*60&&evYest.length);
+  if(late)return{s:"unknown",t:"Eventtag: bitte kurz anrufen",x:"Heute war oder ist Veranstaltung in der Arena. Ob wir noch geöffnet haben, hängt vom Abend ab.",call:true};
+  const next=evToday.find(e=>nowM<mins(e.open));
+  if(next)return{s:"closed",t:"Gerade geschlossen",x:`Heute Eventtag („${next.title}“). Wir öffnen ab ca. ${next.open} Uhr.`};
+  return{s:"closed",t:"Gerade geschlossen",x:reg&&nowM<mins(reg[0])?"Wir öffnen heute um "+reg[0]+" Uhr.":"Regulär Montag–Freitag ab 07:30 Uhr. Bei Veranstaltungen in der Arena öffnen wir etwa 4 Stunden vor Beginn."};
+}
+function render(){
+  const st=computeStatus();
+  document.getElementById("status").className="status "+st.s;
+  document.getElementById("st-title").textContent=st.t;document.getElementById("st-text").textContent=st.x;
+  document.getElementById("st-call").hidden=!st.call;
+}
+function renderEvents(){
+  const today=ymd(new Date());
+  const up=EVENTS.filter(e=>e.date>=today).slice(0,12);
+  document.getElementById("events-list").innerHTML=up.length?up.map(e=>`<div class="ev ${e.date===today?"today":""}"><div><b>${e.title}</b><small>${fmtDate(e.date)} · Beginn ${e.start} Uhr${e.subtitle?" · "+e.subtitle:""}</small></div><span class="tag">${e.date===today?"HEUTE · ":""}wir öffnen ab ca. ${e.open} Uhr</span></div>`).join(""):`<div class="ev"><div><b>Aktuell sind keine Eventtage eingetragen.</b><small>Schau in den Arena-Kalender oder frag per WhatsApp nach.</small></div></div>`;
+}
+document.getElementById("hours").innerHTML=[1,2,3,4,5,6,0].map(d=>`<tr class="${d===new Date().getDay()?"now":""}"><td>${DAYS[d]}</td><td>${HOURS[d]?HOURS[d][0]+" – "+HOURS[d][1]:"Geschlossen"}</td></tr>`).join("")+`<tr><td>Eventtage</td><td>ab ca. 4 Std. vor Beginn, Ende offen</td></tr>`;
+document.getElementById("yr").textContent=new Date().getFullYear();
+const $=id=>document.getElementById(id);
+const store={get(k){try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}},del(k){try{localStorage.removeItem(k)}catch(e){}}};
+
+/* ===== AUSWAHL-DIALOG ===== */
+let CUR=null;
+function openOpt(k){
+  const o=optOf(k);
+  if(!o){addLine({key:k,sel:{},note:""});return}
+  CUR={key:k,sel:{sauces:[],tops:[],bake:false,pick:o.pick?o.pick.options[0]:""}};
+  let h="";
+  if(o.fixed)h+=`<div class="og"><h4>Enthalten</h4><div class="hint">${o.fixed.join(", ")} sind automatisch dabei.</div></div>`;
+  if(o.pick)h+=`<div class="og"><h4>${o.pick.label} wählen</h4><div class="opts">${o.pick.options.map((x,i)=>`<label><input type="radio" name="pick" value="${esc(x)}" ${i?"":"checked"}>${x}</label>`).join("")}</div></div>`;
+  if(o.sauce!==undefined)h+=`<div class="og"><h4>Soßen</h4><div class="hint">${o.sauce?`${o.sauce} Soßen sind inklusive, jede weitere kostet +${eur(addon("sauce"))}.`:`Jede zusätzliche Soße kostet +${eur(addon("sauce"))}.`}</div><div class="opts">${SAUCES.map(x=>`<label><input type="checkbox" name="sauce" value="${esc(x)}">${x}</label>`).join("")}</div></div>`;
+  if(o.tops)h+=`<div class="og"><h4>Extra-Zutaten</h4><div class="hint">Fleisch, Fisch, Käse +${eur(addon("m"))} · sonstige +${eur(addon("o"))} pro Zutat.</div><div class="opts">${TOPS.map(x=>`<label><input type="checkbox" name="top" value="${esc(x[0])}">${x[0]} <small>+${eur(addon(x[1]))}</small></label>`).join("")}</div></div>`;
+  if(o.bake)h+=`<div class="og"><h4>Überbacken</h4><div class="opts"><label><input type="checkbox" name="bake">Mit Käse überbacken <small>+${eur(addon("bake"))}</small></label></div></div>`;
+  $("opt-title").textContent=lineName(k);$("opt-body").innerHTML=h;$("opt-note").value="";
+  $("opt-body").querySelectorAll("input").forEach(i=>i.onchange=readOpt);readOpt();$("opt").showModal();
+}
+function readOpt(){
+  const b=$("opt-body"),s=CUR.sel;
+  s.sauces=[...b.querySelectorAll("[name=sauce]:checked")].map(x=>x.value);
+  s.tops=[...b.querySelectorAll("[name=top]:checked")].map(x=>x.value);
+  const bk=b.querySelector("[name=bake]");s.bake=!!(bk&&bk.checked);
+  const p=b.querySelector("[name=pick]:checked");if(p)s.pick=p.value;
+  $("opt-total").textContent=eur(basePrice(CUR.key)+extras(CUR.key,s));
+}
+$("opt-cancel").onclick=()=>$("opt").close();
+$("opt-add").onclick=()=>{addLine({key:CUR.key,sel:CUR.sel,note:$("opt-note").value.trim()});$("opt").close()};
+
+/* ===== WARENKORB ===== */
+let CART=store.get("cart3")||[];
+const total=()=>CART.reduce((s,x)=>s+unit(x)*x.qty,0), count=()=>CART.reduce((s,x)=>s+x.qty,0);
+function persist(){
+  store.set("cart3",CART);
+  const open=$("menu-dlg").open,n=count();
+  $("cartbar").classList.toggle("show",n>0&&!open);$("mbar").classList.toggle("show",n>0);
+  document.querySelectorAll(".cartbtn").forEach(b=>b.textContent=`🛒 ${n} Artikel · ${eur(total())} · Bestellung ansehen`);
+}
+function addLine(l){
+  const id=l.key+"|"+JSON.stringify(l.sel||{})+"|"+(l.note||""), f=CART.find(x=>x.id===id);
+  if(f)f.qty++;else CART.push({id,key:l.key,sel:l.sel||{},note:l.note||"",qty:1});
+  persist();
+}
+function renderCart(){
+  persist();
+  $("cart-lines").innerHTML=CART.length?CART.map((x,i)=>`<div class="cl"><div class="n">${lineName(x.key)}${summary(x).map(t=>`<small>${esc(t)}</small>`).join("")}</div><div class="p">${eur(unit(x)*x.qty)}</div><div class="q"><button data-q="-1" data-i="${i}" aria-label="weniger">−</button><b>${x.qty}</b><button data-q="1" data-i="${i}" aria-label="mehr">+</button><span style="color:var(--mute);font-size:.82rem">${eur(unit(x))} je Stück</span></div><span></span><input type="text" data-note="${i}" placeholder="Anmerkung (kostet nichts extra)" value="${esc(x.note||"")}"></div>`).join(""):`<p>Dein Warenkorb ist leer.</p>`;
+  $("cart-total").textContent=eur(total());
+  const st=computeStatus();
+  $("cart-status").textContent=st.s==="closed"?"Wir haben gerade geschlossen. Du kannst trotzdem anfragen, wir antworten, sobald wir wieder da sind.":(st.s==="open"?"Wir haben gerade geöffnet.":"Hinweis: "+st.t+". Wir antworten so schnell wie möglich.");
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest(".add");
+  if(b){openOpt(b.dataset.key);b.classList.add("ok");setTimeout(()=>b.classList.remove("ok"),450);return}
+  const q=e.target.closest("[data-q]");
+  if(q){const i=+q.dataset.i;CART[i].qty+=+q.dataset.q;if(CART[i].qty<=0)CART.splice(i,1);renderCart()}
+});
+$("cart-lines").addEventListener("input",e=>{const n=e.target.dataset.note;if(n!==undefined){CART[+n].note=e.target.value;persist()}});
+document.querySelectorAll(".cartbtn").forEach(b=>b.onclick=()=>{renderCart();$("cart-msg").textContent="";$("cart").showModal()});
+document.querySelectorAll(".open-menu").forEach(b=>b.onclick=()=>{$("menu-dlg").showModal();persist()});
+$("menu-close").onclick=()=>{$("menu-dlg").close();persist()};
+$("menu-dlg").addEventListener("close",persist);
+$("cart-close").onclick=()=>$("cart").close();
+$("cart-clear").onclick=()=>{CART=[];renderCart();$("cart").close()};
+document.querySelectorAll("[name=ctype]").forEach(r=>r.onchange=()=>{$("c-addr-wrap").hidden=document.querySelector("[name=ctype]:checked").value!=="Lieferung"});
+$("cart-send").onclick=()=>{
+  const msg=$("cart-msg"),name=$("c-name").value.trim(),type=document.querySelector("[name=ctype]:checked").value,addr=$("c-addr").value.trim();
+  if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
+  if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
+  if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();return}
+  const lines=CART.map(x=>`${x.qty}x ${lineName(x.key)} – ${eur(unit(x)*x.qty)}${summary(x).map(t=>`\n   ${t}`).join("")}${x.note?`\n   Anmerkung: ${x.note}`:""}`);
+  const t=$("c-time").value.trim(),n=$("c-note").value.trim();
+  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t:""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
+  const url=`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
+  msg.innerHTML=`Du wirst zu WhatsApp weitergeleitet. Dort musst du die vorbereitete Nachricht nur noch abschicken. Falls nichts passiert: <a href="${url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:underline">hier tippen</a>.`;
+  const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
+};
+
+/* ===== INHABER: STATUS UND PREISE ===== */
+async function loadOverride(){
+  try{OVERRIDE=STATUS_API?await (await fetch(STATUS_API,{cache:"no-store"})).json():store.get("demoStatus")}catch(e){OVERRIDE=null}
+  PMODE=STATUS_API?((OVERRIDE&&OVERRIDE.pmode)||null):store.get("demoPmode");
+  render();
+  const m=priceMode();if(m!==lastMode){lastMode=m;renderMenu();renderCart()}
+}
+async function loadPrices(){
+  try{const j=STATUS_API?await (await fetch(STATUS_API+"/prices",{cache:"no-store"})).json():store.get("demoPrices");PR=(j&&j.prices)||j||{}}catch(e){PR={}}
+  if(PR&&PR.prices)PR=PR.prices;
+  renderMenu();persist();
+}
+const dlg=$("owner"),msg=$("owner-msg"),pin=$("pin");
+document.querySelectorAll(".owner-open").forEach(b=>b.onclick=()=>{
+  $("owner-info").textContent=STATUS_API?"PIN eingeben und Status wählen. Er gilt maximal 16 Stunden und springt dann auf automatisch.":`Testmodus (PIN ${DEMO_PIN}): gilt nur in diesem Browser. Für alle Besucher muss der Status-Worker eingerichtet sein.`;
+  try{pin.value=sessionStorage.getItem("pin")||""}catch(e){}msg.textContent="";pmUi();dlg.showModal();
+});
+const MODE_NAME={d:"Schulzeit-Preise (Mo–Fr 07:00–14:30 Uhr)",e:"Eventzeit-Preise (alle anderen Zeiten)"};
+function pmUi(){
+  const cur=priceMode(),manual=!!(PMODE&&PMODE.until>Date.now());
+  $("pm-info").innerHTML=`Gerade gelten die <b>${MODE_NAME[cur]}</b>${manual?" (von dir umgestellt, bis zum nächsten automatischen Wechsel)":" (automatisch nach Uhrzeit)"}.`;
+  $("pm-switch").textContent=cur==="d"?"🏟️ Auf Eventzeit-Preise umschalten":"🎒 Auf Schulzeit-Preise umschalten";
+  $("pm-auto").hidden=!manual;
+}
+async function setPmode(mode){
+  const m=$("owner-msg");try{sessionStorage.setItem("pin",pin.value)}catch(e){}
+  const val=mode?{mode,until:nextChange()}:null;
+  try{
+    if(STATUS_API){const r=await fetch(STATUS_API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,kind:"pmode",mode:val&&val.mode,until:val&&val.until})});if(!r.ok){m.textContent="PIN falsch.";return}}
+    else{if(pin.value!==DEMO_PIN){m.textContent="PIN falsch.";return}if(val)store.set("demoPmode",val);else store.del("demoPmode")}
+    await loadOverride();pmUi();m.textContent="Preise umgestellt.";
+  }catch(e){m.textContent="Fehler beim Speichern."}
+}
+$("pm-switch").onclick=()=>setPmode(priceMode()==="d"?"e":"d");
+$("pm-auto").onclick=()=>setPmode(null);
+$("owner-close").onclick=()=>dlg.close();
+dlg.querySelectorAll("[data-set]").forEach(b=>b.onclick=async()=>{
+  const state=b.dataset.set;try{sessionStorage.setItem("pin",pin.value)}catch(e){}
+  try{
+    if(STATUS_API){const r=await fetch(STATUS_API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,state})});if(!r.ok){msg.textContent="PIN falsch.";return}}
+    else{if(pin.value!==DEMO_PIN){msg.textContent="PIN falsch.";return}
+      if(state==="auto")store.del("demoStatus");else store.set("demoStatus",{state,set:Date.now(),expires:Date.now()+16*3600*1000})}
+    msg.textContent="Gespeichert.";await loadOverride();setTimeout(()=>dlg.close(),600);
+  }catch(e){msg.textContent="Fehler beim Speichern."}
+});
+/* Preis-Editor */
+const pdlg=$("prices");
+function slots(){const r=[];ORDER.forEach(ck=>{const C=MENU[ck];C.items.forEach((it,i)=>it[2].forEach((_,si)=>r.push({k:`${ck}|${i}|${si}`,ck,label:it[0]+(C.sizes?" ("+C.sizes[si]+")":""),d:it[2][si],e:it[3][si]})))});return r}
+$("owner-prices").onclick=()=>{
+  $("pr-pin").value=pin.value;$("pr-msg").textContent="";
+  let h=`<div class="pr-row pr-th"><span></span><span>Mo–Fr 07–14:30</span><span>Sonst</span></div>`,last="";
+  slots().forEach(s=>{
+    if(s.ck!==last){h+=`<div class="pr-h">${MENU[s.ck].title}</div>`;last=s.ck}
+    const o=PR[s.k]||{};
+    h+=`<div class="pr-row"><span>${s.label}</span><input type="number" step="0.1" min="0" data-k="${s.k}" data-m="d" value="${typeof o.d==="number"?o.d:s.d}"><input type="number" step="0.1" min="0" data-k="${s.k}" data-m="e" value="${typeof o.e==="number"?o.e:s.e}"></div>`;
+  });
+  h+=`<div class="pr-h">Extras (gelten immer)</div>`;
+  Object.keys(ADDON).forEach(a=>{const o=PR["addon|"+a+"|0"];h+=`<div class="pr-row"><span>${ADDON[a].n}</span><input type="number" step="0.1" min="0" data-k="addon|${a}|0" data-m="d" value="${o&&typeof o.d==="number"?o.d:ADDON[a].p}"><span></span></div>`});
+  $("pr-list").innerHTML=h;dlg.close();pdlg.showModal();
+};
+$("pr-close").onclick=()=>pdlg.close();
+async function savePrices(prices){
+  const p=$("pr-pin").value;
+  if(STATUS_API){const r=await fetch(STATUS_API+"/prices",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:p,prices})});if(!r.ok)throw new Error("pin")}
+  else{if(p!==DEMO_PIN)throw new Error("pin");if(prices&&Object.keys(prices).length)store.set("demoPrices",{prices});else store.del("demoPrices")}
+}
+$("pr-save").onclick=async()=>{
+  const out={};
+  slots().forEach(s=>{
+    const d=$(`pr-list`).querySelector(`[data-k="${s.k}"][data-m=d]`),e=$(`pr-list`).querySelector(`[data-k="${s.k}"][data-m=e]`),o={};
+    if(d.value!==""&&+d.value!==s.d)o.d=+d.value;if(e.value!==""&&+e.value!==s.e)o.e=+e.value;
+    if(Object.keys(o).length)out[s.k]=o;
+  });
+  Object.keys(ADDON).forEach(a=>{const i=$("pr-list").querySelector(`[data-k="addon|${a}|0"]`);if(i.value!==""&&+i.value!==ADDON[a].p)out[`addon|${a}|0`]={d:+i.value}});
+  try{await savePrices(out);PR=out;renderMenu();persist();$("pr-msg").textContent="Gespeichert. Die neuen Preise gelten jetzt.";}
+  catch(e){$("pr-msg").textContent=e.message==="pin"?"PIN falsch.":"Fehler beim Speichern."}
+};
+$("pr-reset").onclick=async()=>{try{await savePrices({});PR={};renderMenu();persist();$("pr-msg").textContent="Alle Preise sind wieder auf Standard.";$("owner-prices").click()}catch(e){$("pr-msg").textContent=e.message==="pin"?"PIN falsch.":"Fehler."}};
+
+persist();
+let lastMode=priceMode();
+renderMenu();
+setInterval(()=>{const m=priceMode();if(m!==lastMode){lastMode=m;renderMenu();renderCart()}},30000);
+(window.EVENTS_DATA?Promise.resolve(window.EVENTS_DATA):fetch("events.json",{cache:"no-store"}).then(r=>r.json())).then(j=>{EVENTS=(j&&j.events)||[]}).catch(()=>{}).finally(()=>{renderEvents();loadOverride();loadPrices();setInterval(loadOverride,60000)});
+</script>
+</body>
+</html>

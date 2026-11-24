@@ -1,0 +1,13 @@
+# Kleiner lokaler Testserver: powershell -File serve.ps1  ->  http://localhost:8080
+$root = $PSScriptRoot
+$l = New-Object System.Net.HttpListener
+$l.Prefixes.Add("http://localhost:8080/"); $l.Start()
+$types = @{".html"="text/html; charset=utf-8";".json"="application/json";".jpg"="image/jpeg";".png"="image/png";".css"="text/css";".js"="text/javascript"}
+while ($l.IsListening) {
+  $c = $l.GetContext(); $p = $c.Request.Url.LocalPath.TrimStart("/"); if ($p -eq "") { $p = "index.html" }
+  $f = Join-Path $root $p
+  if (Test-Path $f -PathType Leaf) {
+    $b = [IO.File]::ReadAllBytes($f); $c.Response.ContentType = $types[[IO.Path]::GetExtension($f)]; $c.Response.OutputStream.Write($b,0,$b.Length)
+  } else { $c.Response.StatusCode = 404 }
+  $c.Response.Close()
+}
