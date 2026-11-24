@@ -331,14 +331,14 @@ dialog.full[open]{display:block}
 <script src="events.js"></script>
 <script>
 /* ===== EINSTELLUNGEN ===== */
-const STATUS_API = "";   // Adresse des Status-Workers (siehe status-worker.js). Leer = Testmodus nur in diesem Browser.
+let STATUS_API = "";     // wird automatisch auf "/api" gesetzt, sobald der Server (Netlify-Funktion) erreichbar ist. Sonst Testmodus nur in diesem Browser.
 const DEMO_PIN = "1234"; // nur für den Testmodus ohne STATUS_API
 const WA_NUMBER = "491724278201";
 
 /* ===== AUSWAHL: Soßen, Zutaten ===== */
-const SAUCES=["Ketchup","Mayo","Curryketchup","Scharf (Sriracha)","Remoulade","Süßsauer","Joppie","Cocktail","Aioli","BBQ","Knoblauch","Öl"];
+const SAUCES=["Ketchup","Mayo","Curryketchup","Scharf (Sriracha)","Remoulade","Süßsauer","Joppie","Cocktail","Aioli","BBQ","Knoblauchöl"];
 const TOPS=[["Schinken","m"],["Salami","m"],["Sucuk","m"],["Chicken","m"],["Thunfisch","m"],["Mozzarella","m"],["Mais","o"],["Paprika","o"],["Jalapeños","o"],["Zwiebel","o"],["Champignons","o"],["Ananas","o"],["Frische Tomaten","o"],["Gekochtes Ei","o"]];
-const ADDON={m:{n:"Extra Fleisch-/Fisch-/Käsezutat",p:1.5},o:{n:"Extra sonstige Zutat",p:1},sauce:{n:"Weitere Soße (ab der dritten)",p:1},bake:{n:"Baguette überbacken",p:1}};
+const ADDON={m:{n:"Extra Fleisch-/Thunfisch-/Käsezutat",p:1.5},o:{n:"Extra sonstige Zutat",p:1},sauce:{n:"Weitere Soße (ab der dritten)",p:1},bake:{n:"Baguette überbacken",p:1}};
 
 /* ===== SPEISEKARTE =====
    Eintrag: [Name, Beschreibung, Preise Mo–Fr 07:00–14:30 [], Preise sonst [], optional: Auswahl-Optionen]
@@ -351,11 +351,11 @@ const MENU={
   ["Hawaii","Schinken, Ananas",[7.5,8.5],[8.5,9.5]],["Tutto","Schinken, Salami, Champignons",[9,10],[10,11]],
   ["Vegetale","Champignons, Paprika, Mais, gekochtes Ei",[9,10],[10,11]],["Capri","Champignons, Salami, Paprika, Zwiebeln",[8.5,9.5],[9.5,10.5]],
   ["Texas Pizza BBQ","Chicken, BBQ-Soße, Mais",[9,10],[10,11]],["Pizza Mozzarella","Frische Tomatenscheiben, Mozzarella, Basilikum",[8.5,9.5],[9.5,10.5]]],
-  chips:["Extra-Zutaten: Fleisch, Fisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b> (bei der Auswahl wählbar)"]},
+  chips:["Extra-Zutaten: Fleisch, Thunfisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b> (bei der Auswahl wählbar)"]},
  broetchen:{title:"Gefüllte Pizzabrötchen (Panini)",prefix:"Pizzabrötchen ",pics:["broetchen1","broetchen2"],opt:{tops:1},items:[
   ["Pizzabrötchen mit Kräuterbutter","",[3.5],[4.5],false],["Gauda","",[4.5],[5.5]],["Thunfisch","",[5.5],[6.5]],["Salami","",[5.5],[6.5]],["Sucuk","",[6],[7]],
   ["Chicken","",[6],[7]],["Schinken","",[5.5],[6.5]],["Mozzarella & frische Tomaten","",[6],[7]],["Schinken + Ananas","",[6],[7]],["Chicken BBQ Sauce","",[6.5],[7.5]]],
-  chips:["Extra-Zutaten: Fleisch, Fisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b>"]},
+  chips:["Extra-Zutaten: Fleisch, Thunfisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b>"]},
  baguette:{title:"Baguette",note:"Eisbergsalat und Gurken sind enthalten. Dazu 2 Soßen inklusive, jede weitere +1,00 €.",prefix:"Baguette ",pics:["stock-baguette"],opt:{sauce:2,tops:1,bake:1},items:[
   ["Thunfisch","",[5],[6]],["Salami","",[5],[6]],["Ei","",[5],[6]],["Gauda","",[5],[6]],["Mozzarella","",[5.5],[6.5]],["Schinken","",[5],[6]],
   ["Sucuk","",[5.5],[6.5]],["Chicken","",[5.5],[6.5]],["Nuggets","",[5],[6]],["König","3 Beilagen",[8],[8]],["Veggie","",[5.5],[6.5]]],
@@ -472,7 +472,7 @@ function openOpt(k){
   if(o.fixed)h+=`<div class="og"><h4>Enthalten</h4><div class="hint">${o.fixed.join(", ")} sind automatisch dabei.</div></div>`;
   if(o.pick)h+=`<div class="og"><h4>${o.pick.label} wählen</h4><div class="opts">${o.pick.options.map((x,i)=>`<label><input type="radio" name="pick" value="${esc(x)}" ${i?"":"checked"}>${x}</label>`).join("")}</div></div>`;
   if(o.sauce!==undefined)h+=`<div class="og"><h4>Soßen</h4><div class="hint">${o.sauce?`${o.sauce} Soßen sind inklusive, jede weitere kostet +${eur(addon("sauce"))}.`:`Jede zusätzliche Soße kostet +${eur(addon("sauce"))}.`}</div><div class="opts">${SAUCES.map(x=>`<label><input type="checkbox" name="sauce" value="${esc(x)}">${x}</label>`).join("")}</div></div>`;
-  if(o.tops)h+=`<div class="og"><h4>Extra-Zutaten</h4><div class="hint">Fleisch, Fisch, Käse +${eur(addon("m"))} · sonstige +${eur(addon("o"))} pro Zutat.</div><div class="opts">${TOPS.map(x=>`<label><input type="checkbox" name="top" value="${esc(x[0])}">${x[0]} <small>+${eur(addon(x[1]))}</small></label>`).join("")}</div></div>`;
+  if(o.tops)h+=`<div class="og"><h4>Extra-Zutaten</h4><div class="hint">Fleisch, Thunfisch, Käse +${eur(addon("m"))} · sonstige +${eur(addon("o"))} pro Zutat.</div><div class="opts">${TOPS.map(x=>`<label><input type="checkbox" name="top" value="${esc(x[0])}">${x[0]} <small>+${eur(addon(x[1]))}</small></label>`).join("")}</div></div>`;
   if(o.bake)h+=`<div class="og"><h4>Überbacken</h4><div class="opts"><label><input type="checkbox" name="bake">Mit Käse überbacken <small>+${eur(addon("bake"))}</small></label></div></div>`;
   $("opt-title").textContent=lineName(k);$("opt-body").innerHTML=h;$("opt-note").value="";
   $("opt-body").querySelectorAll("input").forEach(i=>i.onchange=readOpt);readOpt();$("opt").showModal();
@@ -538,7 +538,7 @@ $("cart-send").onclick=()=>{
 
 /* ===== INHABER: STATUS UND PREISE ===== */
 async function loadOverride(){
-  try{OVERRIDE=STATUS_API?await (await fetch(STATUS_API,{cache:"no-store"})).json():store.get("demoStatus")}catch(e){OVERRIDE=null}
+  try{OVERRIDE=STATUS_API?await (await fetch(STATUS_API+"/status",{cache:"no-store"})).json():store.get("demoStatus")}catch(e){OVERRIDE=null}
   PMODE=STATUS_API?((OVERRIDE&&OVERRIDE.pmode)||null):store.get("demoPmode");
   render();
   const m=priceMode();if(m!==lastMode){lastMode=m;renderMenu();renderCart()}
@@ -564,7 +564,7 @@ async function setPmode(mode){
   const m=$("owner-msg");try{sessionStorage.setItem("pin",pin.value)}catch(e){}
   const val=mode?{mode,until:nextChange()}:null;
   try{
-    if(STATUS_API){const r=await fetch(STATUS_API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,kind:"pmode",mode:val&&val.mode,until:val&&val.until})});if(!r.ok){m.textContent="PIN falsch.";return}}
+    if(STATUS_API){const r=await fetch(STATUS_API+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,kind:"pmode",mode:val&&val.mode,until:val&&val.until})});if(!r.ok){m.textContent="PIN falsch.";return}}
     else{if(pin.value!==DEMO_PIN){m.textContent="PIN falsch.";return}if(val)store.set("demoPmode",val);else store.del("demoPmode")}
     await loadOverride();pmUi();m.textContent="Preise umgestellt.";
   }catch(e){m.textContent="Fehler beim Speichern."}
@@ -575,7 +575,7 @@ $("owner-close").onclick=()=>dlg.close();
 dlg.querySelectorAll("[data-set]").forEach(b=>b.onclick=async()=>{
   const state=b.dataset.set;try{sessionStorage.setItem("pin",pin.value)}catch(e){}
   try{
-    if(STATUS_API){const r=await fetch(STATUS_API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,state})});if(!r.ok){msg.textContent="PIN falsch.";return}}
+    if(STATUS_API){const r=await fetch(STATUS_API+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,state})});if(!r.ok){msg.textContent="PIN falsch.";return}}
     else{if(pin.value!==DEMO_PIN){msg.textContent="PIN falsch.";return}
       if(state==="auto")store.del("demoStatus");else store.set("demoStatus",{state,set:Date.now(),expires:Date.now()+16*3600*1000})}
     msg.textContent="Gespeichert.";await loadOverride();setTimeout(()=>dlg.close(),600);
@@ -619,7 +619,15 @@ persist();
 let lastMode=priceMode();
 renderMenu();
 setInterval(()=>{const m=priceMode();if(m!==lastMode){lastMode=m;renderMenu();renderCart()}},30000);
-(window.EVENTS_DATA?Promise.resolve(window.EVENTS_DATA):fetch("events.json",{cache:"no-store"}).then(r=>r.json())).then(j=>{EVENTS=(j&&j.events)||[]}).catch(()=>{}).finally(()=>{renderEvents();loadOverride();loadPrices();setInterval(loadOverride,60000)});
+(async()=>{
+  // Läuft die Netlify-Funktion? Dann gelten Status, Preise und Termine für alle Besucher.
+  try{const r=await fetch("/api/status",{cache:"no-store"});if(r.ok&&(r.headers.get("content-type")||"").includes("json")){await r.json();STATUS_API="/api"}}catch(e){}
+  let j=window.EVENTS_DATA||null;
+  if(STATUS_API){try{const e=await (await fetch(STATUS_API+"/events",{cache:"no-store"})).json();if(e&&e.events&&e.events.length)j=e}catch(e){}}
+  if(!j){try{j=await (await fetch("events.json",{cache:"no-store"})).json()}catch(e){}}
+  EVENTS=(j&&j.events)||[];
+  renderEvents();loadOverride();loadPrices();setInterval(loadOverride,60000);
+})();
 </script>
 </body>
 </html>

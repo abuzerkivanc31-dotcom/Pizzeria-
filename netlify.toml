@@ -1,0 +1,46 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# Dateien, die nicht öffentlich abrufbar sein sollen (Funktionscode, Skripte, Konfiguration)
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package.json"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package-lock.json"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify.toml"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*.ps1"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/status-worker.js"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/README.md"
+  to = "/404.html"
+  status = 404
+  force = true
