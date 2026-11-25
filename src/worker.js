@@ -280,14 +280,15 @@ async function verifyStripe(raw, header, secret) {
 // Aktiv nur, wenn TELEGRAM_BOT_TOKEN und TELEGRAM_CHAT_ID gesetzt sind. Fehler dürfen die Bestellung nie stören.
 async function notifyTelegram(env, rec) {
   try {
-    if (!env.TELEGRAM_BOT_TOKEN) return;
+    if (!env.TELEGRAM_BOT_TOKEN) return "kein-token";
     // Chat-ID: fest per Secret gesetzt oder automatisch aus der ersten Nachricht an den Bot ermittelt (und gemerkt)
     let chat = env.TELEGRAM_CHAT_ID || (await env.DATA.get("tgchat"));
     if (!chat) {
       const u = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/getUpdates");
+      if (!u.ok) { await env.DATA.put("tgstatus", "getupdates-" + u.status); return "fehler"; }
       const uj = await u.json().catch(() => ({}));
       const first = ((uj && uj.result) || []).find((x) => x.message && x.message.chat && x.message.chat.type === "private");
-      if (!first) { console.log("Telegram: noch keine Nachricht an den Bot"); return; }
+      if (!first) { await env.DATA.put("tgstatus", "keine-nachricht-am-bot"); return "keine-nachricht"; }
       chat = String(first.message.chat.id);
       await env.DATA.put("tgchat", chat);
     }
@@ -311,9 +312,11 @@ async function notifyTelegram(env, rec) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ chat_id: chat, text }),
     });
-    if (!r.ok) console.log("Telegram-Hinweis fehlgeschlagen", r.status);
+    await env.DATA.put("tgstatus", r.ok ? "ok" : "fehler-" + r.status);
+    return r.ok ? "ok" : "fehler";
   } catch (e) {
-    console.log("Telegram-Hinweis Fehler");
+    try { await env.DATA.put("tgstatus", "ausnahme"); } catch (e2) {}
+    return "fehler";
   }
 }
 // Stripe meldet bezahlte Sitzungen: dann wird die Bestellung für den Inhaber sichtbar ("bezahlt")
@@ -335,7 +338,10 @@ async function handleStripeWebhook(req, env) {
         : { id, t: Date.now(), name: str((s.customer_details && s.customer_details.name) || "Unbekannt", 80), type: "Abholung", addr: "", time: "", note: "Bestelldetails fehlen, bitte in Stripe prüfen", lines: ["(Bezahlte Bestellung, Details siehe Stripe)"], total: (s.amount_total || 0) / 100, fee: 0, km: 0, paid: true, paidAt: Date.now(), phone };
       await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
       if (pend) await kv.delete(`p:${id}`);
-      await notifyTelegram(env, rec);
+      if ((await notifyTelegram(env, rec)) === "ok") { rec.tgDone = true; await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S }); }
+    } else if (id && s.payment_status === "paid") {
+      const ex = await getJSON(kv, `o:${id}`);
+      if (ex && !ex.tgDone && (await notifyTelegram(env, ex)) === "ok") { ex.tgDone = true; await setJSON(kv, `o:${id}`, ex, { expirationTtl: ORDER_TTL_S }); }
     }
   }
   return json({ received: true });
@@ -355,7 +361,7 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
