@@ -79,6 +79,7 @@ async function handleApi(req, env) {
     }
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
+    if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
     return json({ error: "not found" }, 404);
   }
 
@@ -113,6 +114,14 @@ async function handleApi(req, env) {
       const p = b.prices && typeof b.prices === "object" ? b.prices : {};
       if (Object.keys(p).length) await setJSON(kv, "prices", { prices: p });
       else await kv.delete("prices");
+      return json({ ok: true });
+    }
+    if (path === "/rating") {
+      if (b.clear) { await kv.delete("rating"); return json({ ok: true }); }
+      const score = Number(String(b.score).replace(",", "."));
+      const count = Math.floor(Number(b.count));
+      if (!(score >= 0 && score <= 10) || !(count >= 1 && count <= 1000000)) return json({ error: "invalid" }, 400);
+      await setJSON(kv, "rating", { score: score.toFixed(1).replace(".", ","), count, updated: Date.now() });
       return json({ ok: true });
     }
     if (path === "/orders/list") return json({ orders: await listOrders(kv) });
