@@ -115,6 +115,73 @@ async function listOrders(kv) {
   return all.filter(Boolean).sort((a, b) => b.t - a.t);
 }
 
+// ---------- Online-Zahlung (Stripe Checkout: Apple Pay, Karte u. a.) ----------
+const eurS = (n) => n.toFixed(2).replace(".", ",") + " €";
+function berlinNow() {
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+  const get = (t) => p.find((x) => x.type === t).value;
+  const dow = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[get("weekday")];
+  return { dow, m: Number(get("hour")) * 60 + Number(get("minute")) };
+}
+// d = Schulzeit-Preise (Mo–Fr 07:00–14:30), e = Eventzeit-Preise (sonst)
+function autoMode() {
+  const { dow, m } = berlinNow();
+  return dow >= 1 && dow <= 5 && m >= 7 * 60 && m < 14 * 60 + 30 ? "d" : "e";
+}
+// Rechnet den Warenkorb serverseitig nach (gleiche Regeln wie die Seite), damit Preise nicht verändert werden können.
+function priceCart(menu, PR, mode, cart) {
+  const addon = (a) => {
+    const o = PR["addon|" + a + "|0"];
+    return o && typeof o.d === "number" ? o.d : menu.ADDON[a].p;
+  };
+  if (!Array.isArray(cart) || !cart.length || cart.length > 40) return { error: "cart" };
+  const out = [];
+  for (const l of cart) {
+    const key = String((l && l.key) || "");
+    if (!/^[a-z]+\|\d+\|\d+$/.test(key)) return { error: "cart" };
+    const [c, i, s] = key.split("|");
+    const C = menu.MENU[c];
+    const it = C && C.items[Number(i)];
+    const list = it && it[mode === "d" ? 2 : 3];
+    if (!list || typeof list[Number(s)] !== "number") return { error: "cart" };
+    const qty = Math.floor(Number(l.qty));
+    if (!(qty >= 1 && qty <= 30)) return { error: "cart" };
+    const sel = l.sel && typeof l.sel === "object" ? l.sel : {};
+    const o = (it[4] !== undefined ? it[4] : C.opt) || {};
+    const ov = PR[key] && PR[key][mode];
+    let unit = typeof ov === "number" ? ov : list[Number(s)];
+    const tops = Array.isArray(sel.tops) ? sel.tops : [];
+    const sauces = Array.isArray(sel.sauces) ? sel.sauces : [];
+    if (tops.length > 14 || sauces.length > 12) return { error: "cart" };
+    if (tops.length && !o.tops) return { error: "cart" };
+    if (sauces.length && o.sauce === undefined) return { error: "cart" };
+    for (const n of tops) {
+      const T = menu.TOPS.find((x) => x[0] === n);
+      if (!T) return { error: "cart" };
+      unit += addon(T[1]);
+    }
+    for (const n of sauces) if (!menu.SAUCES.includes(n)) return { error: "cart" };
+    unit += Math.max(0, sauces.length - (o.sauce || 0)) * addon("sauce");
+    if (sel.bake) {
+      if (!o.bake) return { error: "cart" };
+      unit += addon("bake");
+    }
+    const pick = o.pick ? (o.pick.options.includes(sel.pick) ? sel.pick : o.pick.options[0]) : "";
+    unit = Math.round(unit * 100) / 100;
+    const pre = C.prefix || "";
+    const base = pre && !it[0].toLowerCase().includes(pre.trim().toLowerCase()) ? pre + it[0] : it[0];
+    const name = base + (C.sizes ? ` (${C.sizes[Number(s)]})` : "");
+    const det = [];
+    if (o.pick && pick) det.push(`${o.pick.label}: ${pick}`);
+    if (o.fixed) det.push("Inklusive: " + o.fixed.join(", "));
+    if (sauces.length) det.push("Soßen: " + sauces.join(", "));
+    if (tops.length) det.push("Extra: " + tops.join(", "));
+    if (sel.bake) det.push("Überbacken");
+    out.push({ name, det, note: str(l.note, 200), qty, unit });
+  }
+  return { lines: out, sum: Math.round(out.reduce((a, x) => a + x.unit * x.qty, 0) * 100) / 100 };
+}
+
 async function handleApi(req, env) {
   const kv = env.DATA;
   const path = new URL(req.url).pathname.replace(/\/+$/, "").replace(/^\/api/, "");
