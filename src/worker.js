@@ -89,7 +89,7 @@ async function handleApi(req, env) {
     if (path === "/orders") return saveOrder(b, req, kv); // öffentlich
 
     const pin = env.OWNER_PIN;
-    if (!pin || !same(String(b.pin || ""), String(pin))) {
+    if (!pin || !same(String(b.pin || "").trim(), String(pin).trim())) {
       await sleep(1000); // bremst das Ausprobieren von PINs
       return json({ error: "pin" }, 403);
     }
