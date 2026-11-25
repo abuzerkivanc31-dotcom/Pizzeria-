@@ -576,8 +576,8 @@ $("cart-send").onclick=()=>{
   if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();return}
   const lines=CART.map(x=>`${x.qty}x ${lineName(x.key)} – ${eur(unit(x)*x.qty)}${summary(x).map(t=>`\n   ${t}`).join("")}${x.note?`\n   Anmerkung: ${x.note}`:""}`);
   const t=$("c-time").value.trim(),n=$("c-note").value.trim();
-  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t:""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
-  const order={name,type,addr:type==="Lieferung"?addr:"",time:t,note:n,lines,total:total()};
+  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}${type==="Lieferung"&&window.ROUTE?`\nLiefergebühr: ${eur(window.ROUTE.fee)} (${String(window.ROUTE.km).replace(".",",")} km Fahrstrecke)\nGesamt: ${eur(total()+window.ROUTE.fee)}`:""}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t:""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
+  const order={name,type,addr:type==="Lieferung"?addr:"",time:t,note:n,lines,total:total(),fee:type==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0,km:type==="Lieferung"&&window.ROUTE?window.ROUTE.km:0};
   try{
     if(STATUS_API)fetch(STATUS_API+"/orders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(order),keepalive:true}).catch(()=>{});
     else{const l=store.get("demoOrders")||[];l.unshift({...order,id:String(Date.now()),t:Date.now()});store.set("demoOrders",l.slice(0,50))}
@@ -651,7 +651,7 @@ async function loadOrders(){
     if(STATUS_API){const r=await post("/orders/list",{pin:OPIN});if(!r.ok){odlg.close();lost();return}list=(await r.json()).orders||[]}
     else list=store.get("demoOrders")||[];
   }catch(e){box.innerHTML="";$("ord-msg").textContent="Konnte die Bestellanfragen nicht laden.";return}
-  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur(o.total)}</b><button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
+  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur((o.total||0)+(o.fee||0))}</b>${o.fee?`<span>inkl. ${eur(o.fee)} Liefergebühr</span>`:""}${o.paid?`<span>✅ online bezahlt</span>`:""}<button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
 }
 async function delOrders(body){
   try{
@@ -741,5 +741,41 @@ ui();
 const _os=ownerShow;ownerShow=function(l){_os(l);$("owner-orders").hidden=ROLE!=="owner"};
 })();
 </script>
-</body>
+<script>
+(()=>{
+let CFG={route:false,pay:false};window.ROUTE=null;let rt=null,seq=0;
+const addr=$("c-addr"),box=document.createElement("div");box.className="legal";box.id="f-route";box.hidden=true;$("c-addr-wrap").after(box);
+const rows=document.createElement("div");rows.id="cart-extra";$("cart-total").parentElement.after(rows);
+fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{if(c){CFG=c;upd()}}).catch(()=>{});
+function upd(){
+const lief=FULFIL==="Lieferung",R=window.ROUTE;
+box.hidden=!(lief&&CFG.route);$("f-deliv").hidden=!lief||(CFG.route&&!!R);
+if(lief&&CFG.route){box.innerHTML=R?`🛵 Fahrstrecke: <b>${String(R.km).replace(".",",")} km</b> · Liefergebühr: <b>${eur(R.fee)}</b> · Mindestbestellwert: <b>${R.min} €</b>`+(total()<R.min?`<br>⚠️ Dir fehlen noch <b>${eur(R.min-total())}</b> bis zum Mindestbestellwert.`:""):(box.dataset.state==="busy"?"Berechne Fahrstrecke …":(box.dataset.err||"Bitte gib deine vollständige Lieferadresse an. Die Lieferkosten werden nach der Fahrstrecke berechnet."))}
+rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div><div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee)}</span></div>`:"";
+}
+async function calc(){
+const a=addr.value.trim();window.ROUTE=null;box.dataset.err="";
+if(FULFIL!=="Lieferung"||!CFG.route||a.length<6){box.dataset.state="";upd();return}
+box.dataset.state="busy";upd();const my=++seq;
+try{
+const r=await fetch("/api/route",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({addr:a})});
+const j=await r.json().catch(()=>({}));if(my!==seq)return;box.dataset.state="";
+if(r.ok&&j.km!==undefined){window.ROUTE={addr:a,km:j.km,fee:j.fee,min:j.min}}
+else box.dataset.err=r.status===429?"Zu viele Anfragen. Bitte warte kurz.":(j.error==="addr"?"Die Adresse wurde nicht gefunden. Bitte Straße, Hausnummer, PLZ und Ort angeben.":"Die Fahrstrecke konnte gerade nicht berechnet werden. Bitte versuche es gleich nochmal oder ruf uns an.");
+}catch(e){if(my!==seq)return;box.dataset.state="";box.dataset.err="Die Fahrstrecke konnte nicht berechnet werden. Bitte versuche es nochmal."}
+upd();
+}
+const _rc=renderCart;renderCart=function(){_rc();upd()};
+const _sf=window.setFulfil;window.setFulfil=function(f){_sf(f);if(f!=="Lieferung"){window.ROUTE=null}else if(addr.value.trim().length>=6){calc();return}upd()};
+addr.addEventListener("input",()=>{window.ROUTE=null;clearTimeout(rt);rt=setTimeout(calc,800);upd()});
+addr.addEventListener("blur",()=>{if(!window.ROUTE&&addr.value.trim().length>=6){clearTimeout(rt);calc()}});
+document.addEventListener("click",e=>{
+if(!e.target.closest("#cart-send")||FULFIL!=="Lieferung"||!CFG.route)return;
+const m=$("cart-msg"),R=window.ROUTE;
+if(!R||R.addr!==addr.value.trim()){e.stopImmediatePropagation();e.preventDefault();m.textContent="Bitte kurz warten, bis die Fahrstrecke für deine Adresse berechnet ist.";if(addr.value.trim().length>=6)calc();return}
+if(total()<R.min){e.stopImmediatePropagation();e.preventDefault();m.textContent="Der Mindestbestellwert für deine Lieferadresse beträgt "+R.min+" €. Dir fehlen noch "+eur(R.min-total())+"."}
+},true);
+upd();
+})();
+</script></body>
 </html>
