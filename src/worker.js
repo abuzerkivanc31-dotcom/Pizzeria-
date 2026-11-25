@@ -79,6 +79,7 @@ async function handleApi(req, env) {
     }
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
+    if (path === "/diag") return json({ set: !!env.OWNER_PIN, len: String(env.OWNER_PIN || "").length, digits: /^\d+$/.test(String(env.OWNER_PIN || "")) });
     return json({ error: "not found" }, 404);
   }
 
