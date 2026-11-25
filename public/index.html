@@ -254,7 +254,7 @@ dialog.full[open]{display:block}
   <div class="mh"><b>🍕 Speisekarte & Bestellung</b><button class="x" id="menu-close">✕ Schließen</button></div>
   <div class="mnav" id="mnav"></div>
   <div class="mbody">
-    <div class="howto"><b>So bestellst du:</b> Gerichte antippen, bei Bedarf Soßen und Extras wählen, unten den Warenkorb öffnen und die Bestellung per WhatsApp an uns schicken. Die Bestellung ist <b>nicht verbindlich</b>: Sie gilt erst, wenn wir sie in WhatsApp bestätigt haben.</div>
+    <div class="howto"><b>So bestellst du:</b> Gerichte antippen, bei Bedarf Soßen und Extras wählen, unten den Warenkorb öffnen und die Bestellung per WhatsApp an uns schicken. Die Bestellung ist <b>nicht verbindlich</b>: Sie gilt erst, wenn wir sie in WhatsApp bestätigt haben. Alle unsere Produkte sind halal.</div>
     <div id="menu"></div>
   </div>
   <div class="mbar" id="mbar"><button class="cartbtn"></button></div>
@@ -286,11 +286,12 @@ dialog.full[open]{display:block}
     <label><input type="radio" name="ctype" value="Lieferung"><span>🛵 Lieferung</span></label>
   </div>
   <div id="c-addr-wrap" hidden><label class="l" for="c-addr">Lieferadresse *</label><input type="text" id="c-addr" placeholder="Straße, Hausnummer, Ort" autocomplete="street-address"></div>
-  <label class="l" for="c-time">Wunschzeit (optional)</label>
+  <div class="legal" id="f-deliv" hidden>🛵 <b>Lieferung:</b> Die Lieferkosten richten sich nach der Fahrstrecke. Bis 1 km: Mindestbestellwert 20 €, keine Liefergebühr. 1 bis 3 km: Mindestbestellwert 25 €, Liefergebühr 1 €. 3 bis 5 km: Mindestbestellwert 30 €, Liefergebühr 2 €. Ab 5 km: Mindestbestellwert 35 €, Liefergebühr 3 €. Abholen ist günstiger.</div>
+<label class="l" for="c-time">Wunschzeit (optional)</label>
   <input type="text" id="c-time" placeholder="z. B. 12:30 Uhr oder „so schnell wie möglich“">
   <label class="l" for="c-note">Allgemeine Anmerkung (optional)</label>
   <textarea id="c-note" placeholder="z. B. Allergien, Wechselgeld …"></textarea>
-  <div class="legal">⚠️ <b>So geht es weiter:</b> Du wirst direkt zu WhatsApp weitergeleitet. Deine Nachricht ist dort schon vorbereitet, du musst sie nur noch abschicken. <b>Verbindlich ist die Bestellung erst, wenn wir sie dir in WhatsApp bestätigt haben</b> (gilt für Abholung und Lieferung). Alle Preise sind Endpreise inkl. gesetzlicher MwSt. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 2 BGB). Zur Übersicht für den Laden wird deine Anfrage zusätzlich 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>).</div>
+  <div class="legal">⚠️ <b>So geht es weiter:</b> Du wirst direkt zu WhatsApp weitergeleitet. Deine Nachricht ist dort schon vorbereitet, du musst sie nur noch abschicken. <b>Verbindlich ist die Bestellung erst, wenn wir sie dir in WhatsApp bestätigt haben</b> (gilt für Abholung und Lieferung). Alle Preise sind Endpreise inkl. 7 % MwSt. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 2 BGB). Zur Übersicht für den Laden wird deine Anfrage zusätzlich 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>).</div>
   <div class="col">
     <button class="btn wa" id="cart-send">💬 Weiter zu WhatsApp</button>
     <button class="btn ghost" id="cart-clear">Warenkorb leeren</button>
@@ -349,6 +350,14 @@ dialog.full[open]{display:block}
     <button class="btn ghost" id="pr-close">Schließen</button>
   </div>
   <div class="msg" id="pr-msg"></div>
+</dialog>
+<dialog id="fulfil">
+<h3>Wie möchtest du bestellen?</h3>
+<p>Bitte wähle zuerst, denn davon hängen die Preise ab. Abholen ist günstiger. Alle unsere Produkte sind halal.</p>
+<div class="col">
+<button class="btn wa" data-f="Abholung">🏃 Abholung</button>
+<button class="btn primary" data-f="Lieferung">🛵 Lieferung</button>
+</div>
 </dialog>
 <dialog id="rating">
 <h3>⭐ Bewertung (Coolibri)</h3>
@@ -410,18 +419,19 @@ const MENU={
 const ORDER=["pizza","broetchen","baguette","pommes","bowl","salate"];
 
 /* ===== PREISE (Standard + Änderungen vom Inhaber) ===== */
-let PR={};   // {schlüssel:{d:Preis Mo–Fr 07–14:30, e:Preis sonst}}
+let PR={},FULFIL=null;   // {schlüssel:{d:Preis Mo–Fr 07–14:30, e:Preis sonst}}
 const eur=n=>n.toFixed(2).replace(".",",")+" €";
 const esc=s=>String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
 /* d = Preisliste Mo–Fr 07:00–14:30 (Schulzeit), e = alle anderen Zeiten (Eventzeit). Der Inhaber kann manuell auf die jeweils andere umschalten. */
 function autoMode(n){const m=n.getHours()*60+n.getMinutes(),d=n.getDay();return(d>=1&&d<=5&&m>=7*60&&m<14*60+30)?"d":"e"}
 let PMODE=null;
 function priceMode(){if(PMODE&&PMODE.until>Date.now()&&(PMODE.mode==="d"||PMODE.mode==="e"))return PMODE.mode;return autoMode(new Date())}
+function effMode(){return FULFIL==="Lieferung"?"e":priceMode()}
 function nextChange(){const now=new Date(),cur=autoMode(now);for(let t=now.getTime()+60000;t<now.getTime()+8*864e5;t+=60000){if(autoMode(new Date(t))!==cur)return t}return now.getTime()+16*36e5}
 const parse=k=>{const[c,i,s]=k.split("|");return{c,i:+i,s:+s}};
 function itemOf(k){const{c,i}=parse(k);return MENU[c].items[i]}
 function optOf(k){const{c}=parse(k),it=itemOf(k);return it[4]!==undefined?it[4]:MENU[c].opt}
-function basePrice(k){const{s}=parse(k),it=itemOf(k),m=priceMode(),o=PR[k]&&PR[k][m];return typeof o==="number"?o:it[m==="d"?2:3][s]}
+function basePrice(k){const{s}=parse(k),it=itemOf(k),m=effMode(),o=PR[k]&&PR[k][m];return typeof o==="number"?o:it[m==="d"?2:3][s]}
 function addon(a){const o=PR["addon|"+a+"|0"];return o&&typeof o.d==="number"?o.d:ADDON[a].p}
 function extras(k,sel){
   const o=optOf(k)||{};let t=0;
@@ -709,6 +719,25 @@ document.getElementById("rt-close").onclick=()=>{rd.close();dlg.showModal()};
 const send=async body=>{try{const r=await fetch("/api/rating",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(Object.assign({pin:OPIN},body))});if(r.status===403){rd.close();lost();dlg.showModal();return null}return r}catch(e){return false}};
 document.getElementById("rt-save").onclick=async()=>{const s=rs.value.trim().replace(",","."),n=parseInt(rc.value,10);if(!(parseFloat(s)>=0&&parseFloat(s)<=10)||!(n>=1)){rm.textContent="Bitte eine Bewertung zwischen 0 und 10 und die Anzahl eintragen.";return}const r=await send({score:s,count:n});if(r===null)return;rm.textContent=r&&r.ok?"Gespeichert. Die Seite zeigt den neuen Wert sofort.":"Fehler beim Speichern."};
 document.getElementById("rt-clear").onclick=async()=>{const r=await send({clear:true});if(r===null)return;rm.textContent=r&&r.ok?"Die Bewertung wird nicht mehr angezeigt.":"Fehler.";if(r&&r.ok){rs.value="";rc.value=""}};
+})();
+</script>
+<style>#fbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}#fbar .btn{padding:8px 16px}.btn.on{background:var(--gold);border-color:var(--gold);color:#111}</style>
+<script>
+(()=>{
+const fd=document.getElementById("fulfil");let pending=null;
+const bar=document.createElement("div");bar.id="fbar";
+bar.innerHTML='<b>Bestellart:</b><button class="btn ghost" data-f="Abholung">🏃 Abholung</button><button class="btn ghost" data-f="Lieferung">🛵 Lieferung</button><small style="color:var(--mute)">Abholen ist günstiger.</small>';
+$("mnav").before(bar);
+function ui(){document.querySelectorAll("[data-f]").forEach(b=>b.classList.toggle("on",b.dataset.f===FULFIL));const n=$("f-deliv");if(n)n.hidden=FULFIL!=="Lieferung"}
+window.setFulfil=f=>{FULFIL=f;const r=document.querySelector('[name=ctype][value="'+f+'"]');if(r)r.checked=true;$("c-addr-wrap").hidden=f!=="Lieferung";renderMenu();renderCart();ui()};
+document.addEventListener("click",e=>{
+const b=e.target.closest("[data-f]");
+if(b){setFulfil(b.dataset.f);if(fd.open){fd.close();if(pending){const p=pending;pending=null;p.click()}}return}
+const o=e.target.closest(".open-menu,.cartbtn");
+if(o&&!FULFIL){e.stopImmediatePropagation();e.preventDefault();pending=o;fd.showModal()}
+},true);
+document.querySelectorAll("[name=ctype]").forEach(r=>r.addEventListener("change",()=>setFulfil(r.value)));
+ui();
 })();
 </script>
 </body>
