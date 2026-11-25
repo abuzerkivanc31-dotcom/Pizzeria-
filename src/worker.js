@@ -17,6 +17,53 @@ const GUELTIG_MS = 16 * 3600 * 1000;        // Status "geöffnet/geschlossen" gi
 const ORDER_TTL_S = 30 * 24 * 3600;         // Bestellanfragen werden nach 30 Tagen automatisch gelöscht
 const ORDER_LIMIT = 5;                      // höchstens 5 Anfragen pro IP in 10 Minuten
 const OFFEN_VOR_BEGINN_STUNDEN = 4;         // der Laden öffnet so viele Stunden vor Veranstaltungsbeginn
+// Lieferkosten nach Fahrstrecke (Google Routes API): bis 1 km / 3 km / 5 km / darüber
+const SHOP_ADDR = "Westparkstraße 102, 47803 Krefeld, Germany";
+function tierFor(km) {
+  if (km <= 1) return { min: 20, fee: 0 };
+  if (km <= 3) return { min: 25, fee: 1 };
+  if (km <= 5) return { min: 30, fee: 2 };
+  return { min: 35, fee: 3 };
+}
+async function routeKm(env, addr) {
+  const r = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Goog-Api-Key": env.GOOGLE_MAPS_KEY,
+      "X-Goog-FieldMask": "routes.distanceMeters",
+    },
+    body: JSON.stringify({
+      origin: { address: SHOP_ADDR },
+      destination: { address: addr },
+      travelMode: "DRIVE",
+      regionCode: "DE",
+      languageCode: "de",
+      units: "METRIC",
+    }),
+  });
+  if (!r.ok) return { error: r.status === 400 || r.status === 404 ? "addr" : "upstream" };
+  const j = await r.json();
+  const m = j.routes && j.routes[0] && j.routes[0].distanceMeters;
+  if (typeof m !== "number") return { error: "addr" };
+  return { km: m / 1000 };
+}
+async function handleRoute(b, req, env) {
+  if (!env.GOOGLE_MAPS_KEY) return json({ error: "nokey" }, 503);
+  let addr = str(b.addr, 200);
+  if (addr.length < 6) return json({ error: "addr" }, 400);
+  if (!/\d{5}/.test(addr) && !addr.includes(",")) addr += ", Krefeld"; // ohne Ort: Krefeld annehmen
+  // Missbrauchsschutz: höchstens 15 Berechnungen pro IP in 10 Minuten
+  const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
+  const rlKey = `rr:${ipHash}:${Math.floor(Date.now() / 600000)}`;
+  const count = Number((await env.DATA.get(rlKey)) || 0);
+  if (count >= 15) return json({ error: "limit" }, 429);
+  await env.DATA.put(rlKey, String(count + 1), { expirationTtl: 1200 });
+  const r = await routeKm(env, addr);
+  if (r.error) return json({ error: r.error }, r.error === "addr" ? 422 : 502);
+  return json({ km: Math.round(r.km * 10) / 10, ...tierFor(r.km) });
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const str = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 const getJSON = (kv, key) => kv.get(key, { type: "json" });
@@ -56,6 +103,8 @@ async function saveOrder(b, req, kv) {
     note: str(b.note, 500),
     lines,
     total: Math.max(0, Math.min(5000, Number(b.total) || 0)),
+    fee: Math.max(0, Math.min(20, Number(b.fee) || 0)),
+    km: Math.max(0, Math.min(500, Number(b.km) || 0)),
   }, { expirationTtl: ORDER_TTL_S });
   return json({ ok: true });
 }
@@ -80,6 +129,7 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: false });
     return json({ error: "not found" }, 404);
   }
 
@@ -88,6 +138,7 @@ async function handleApi(req, env) {
     try { b = await req.json(); } catch (e) {}
 
     if (path === "/orders") return saveOrder(b, req, kv); // öffentlich
+    if (path === "/route") return handleRoute(b, req, env); // öffentlich, begrenzt
 
     // Zwei PINs: OWNER_PIN sieht alles, STAFF_PIN sieht alles außer der Bestellhistorie
     const given = String(b.pin || "").trim();
