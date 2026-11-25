@@ -588,7 +588,7 @@ $("cart-send").onclick=()=>{
 };
 
 /* ===== INHABER ===== */
-let OPIN="";   // die PIN wird nur nach erfolgreicher Anmeldung im Arbeitsspeicher gehalten
+let OPIN="",ROLE="owner";   // die PIN wird nur nach erfolgreicher Anmeldung im Arbeitsspeicher gehalten
 async function loadOverride(){
   try{OVERRIDE=STATUS_API?await (await fetch(STATUS_API+"/status",{cache:"no-store"})).json():store.get("demoStatus")}catch(e){OVERRIDE=null}
   PMODE=STATUS_API?((OVERRIDE&&OVERRIDE.pmode)||null):store.get("demoPmode");
@@ -607,7 +607,7 @@ document.querySelectorAll(".owner-open").forEach(b=>b.onclick=()=>{pin.value="";
 async function login(){
   const p=pin.value.trim();if(!p)return;
   try{
-    const ok=STATUS_API?(await post("/login",{pin:p})).ok:(p===DEMO_PIN);
+    let ok;if(STATUS_API){const r=await post("/login",{pin:p});ok=r.ok;if(ok){try{ROLE=(await r.json()).role||"owner"}catch(e){ROLE="owner"}}}else{ok=p===DEMO_PIN;ROLE="owner"}
     if(!ok){msg.textContent="PIN falsch.";pin.value="";return}
     OPIN=p;pin.value="";ownerShow(true);
   }catch(e){msg.textContent="Anmeldung nicht möglich."}
@@ -615,7 +615,7 @@ async function login(){
 $("owner-go").onclick=login;
 pin.addEventListener("keydown",e=>{if(e.key==="Enter")login()});
 $("owner-close").onclick=()=>dlg.close();
-$("owner-logout").onclick=()=>{OPIN="";dlg.close()};
+$("owner-logout").onclick=()=>{OPIN="";ROLE="owner";dlg.close()};
 function lost(){OPIN="";ownerShow(false);msg.textContent="Bitte neu anmelden."}
 const MODE_NAME={d:"Schulzeit-Preise (Mo–Fr 07:00–14:30 Uhr)",e:"Eventzeit-Preise (alle anderen Zeiten)"};
 function pmUi(){
@@ -738,6 +738,7 @@ if(o&&!FULFIL){e.stopImmediatePropagation();e.preventDefault();pending=o;fd.show
 },true);
 document.querySelectorAll("[name=ctype]").forEach(r=>r.addEventListener("change",()=>setFulfil(r.value)));
 ui();
+const _os=ownerShow;ownerShow=function(l){_os(l);$("owner-orders").hidden=ROLE!=="owner"};
 })();
 </script>
 </body>
