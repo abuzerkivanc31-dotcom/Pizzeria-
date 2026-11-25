@@ -310,13 +310,19 @@ async function notifyTelegram(env, rec) {
       "",
       "Gesamt bezahlt: " + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
     ].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i > 0)).join("\n").slice(0, 4000);
-    const r = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chat, text }),
-    });
-    await env.DATA.put("tgstatus", r.ok ? "ok" : "fehler-" + r.status);
-    return r.ok ? "ok" : "fehler";
+    // Mehrere Empfänger: TELEGRAM_CHAT_ID darf eine Liste sein (Komma getrennt)
+    const ids = String(chat).split(/[\s,;]+/).filter(Boolean);
+    let okN = 0, lastErr = 0;
+    for (const cid of ids) {
+      const r = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chat_id: cid, text }),
+      });
+      if (r.ok) okN++; else lastErr = r.status;
+    }
+    await env.DATA.put("tgstatus", okN ? "ok" + (ids.length > 1 ? " (" + okN + "/" + ids.length + ")" : "") : "fehler-" + lastErr);
+    return okN ? "ok" : "fehler";
   } catch (e) {
     try { await env.DATA.put("tgstatus", "ausnahme"); } catch (e2) {}
     return "fehler";
