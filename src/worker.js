@@ -280,7 +280,7 @@ async function verifyStripe(raw, header, secret) {
 // Aktiv nur, wenn TELEGRAM_BOT_TOKEN und TELEGRAM_CHAT_ID gesetzt sind. Fehler dürfen die Bestellung nie stören.
 async function notifyTelegram(env, rec) {
   try {
-    if (!env.TELEGRAM_BOT_TOKEN) return "kein-token";
+    if (!env.TELEGRAM_BOT_TOKEN) { await env.DATA.put("tgstatus", "kein-token"); return "kein-token"; }
     // Chat-ID: fest per Secret gesetzt oder automatisch aus der ersten Nachricht an den Bot ermittelt (und gemerkt)
     let chat = env.TELEGRAM_CHAT_ID || (await env.DATA.get("tgchat"));
     if (!chat) {
