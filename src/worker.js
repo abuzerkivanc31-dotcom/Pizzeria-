@@ -159,7 +159,8 @@ function priceCart(menu, PR, mode, cart) {
       if (!T) return { error: "cart" };
       unit += addon(T[1]);
     }
-    for (const n of sauces) if (!menu.SAUCES.includes(n)) return { error: "cart" };
+    const okS = Array.isArray(o.sauces) ? o.sauces : menu.SAUCES;
+    for (const n of sauces) if (!okS.includes(n)) return { error: "cart" };
     unit += Math.max(0, sauces.length - (o.sauce || 0)) * addon("sauce");
     if (sel.bake) {
       if (!o.bake) return { error: "cart" };
