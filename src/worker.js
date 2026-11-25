@@ -89,12 +89,15 @@ async function handleApi(req, env) {
 
     if (path === "/orders") return saveOrder(b, req, kv); // öffentlich
 
-    const pin = env.OWNER_PIN;
-    if (!pin || !same(String(b.pin || "").trim(), String(pin).trim())) {
+    // Zwei PINs: OWNER_PIN sieht alles, STAFF_PIN sieht alles außer der Bestellhistorie
+    const given = String(b.pin || "").trim();
+    const isOwner = !!env.OWNER_PIN && same(given, String(env.OWNER_PIN).trim());
+    const isStaff = !isOwner && !!env.STAFF_PIN && same(given, String(env.STAFF_PIN).trim());
+    if (!isOwner && !isStaff) {
       await sleep(1000); // bremst das Ausprobieren von PINs
       return json({ error: "pin" }, 403);
     }
-    if (path === "/login") return json({ ok: true });
+    if (path === "/login") return json({ ok: true, role: isOwner ? "owner" : "staff" });
     if (path === "/status") {
       if (b.kind === "pmode") {
         if ((b.mode === "d" || b.mode === "e") && Number(b.until) > Date.now()) {
@@ -124,8 +127,12 @@ async function handleApi(req, env) {
       await setJSON(kv, "rating", { score: score.toFixed(1).replace(".", ","), count, updated: Date.now() });
       return json({ ok: true });
     }
-    if (path === "/orders/list") return json({ orders: await listOrders(kv) });
+    if (path === "/orders/list") {
+      if (!isOwner) return json({ error: "forbidden" }, 403);
+      return json({ orders: await listOrders(kv) });
+    }
     if (path === "/orders/delete") {
+      if (!isOwner) return json({ error: "forbidden" }, 403);
       if (b.all) {
         const { keys } = await kv.list({ prefix: "o:" });
         await Promise.all(keys.map((x) => kv.delete(x.name)));
