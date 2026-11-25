@@ -276,6 +276,36 @@ async function verifyStripe(raw, header, secret) {
   const hex = [...new Uint8Array(mac)].map((x) => x.toString(16).padStart(2, "0")).join("");
   return sigs.some((s) => same(s, hex));
 }
+// Telegram-Nachricht an den Laden bei jeder bezahlten Bestellung.
+// Aktiv nur, wenn TELEGRAM_BOT_TOKEN und TELEGRAM_CHAT_ID gesetzt sind. Fehler dürfen die Bestellung nie stören.
+async function notifyTelegram(env, rec) {
+  try {
+    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+    const eurS = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
+    const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0);
+    const text = [
+      "🍕 Neue bezahlte Bestellung",
+      "",
+      "Name: " + rec.name,
+      rec.type === "Lieferung" ? "Lieferung an: " + rec.addr + (rec.km ? " (" + rec.km + " km)" : "") : "Abholung",
+      rec.time ? "Wunschzeit: " + rec.time : "",
+      rec.phone ? "Telefon: " + rec.phone : "",
+      "",
+      ...(rec.lines || []),
+      rec.note ? "\nAnmerkung: " + rec.note : "",
+      "",
+      "Gesamt bezahlt: " + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
+    ].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i > 0)).join("\n").slice(0, 4000);
+    const r = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }),
+    });
+    if (!r.ok) console.log("Telegram-Hinweis fehlgeschlagen", r.status);
+  } catch (e) {
+    console.log("Telegram-Hinweis Fehler");
+  }
+}
 // Stripe meldet bezahlte Sitzungen: dann wird die Bestellung für den Inhaber sichtbar ("bezahlt")
 async function handleStripeWebhook(req, env) {
   if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "nokey" }, 503);
@@ -295,6 +325,7 @@ async function handleStripeWebhook(req, env) {
         : { id, t: Date.now(), name: str((s.customer_details && s.customer_details.name) || "Unbekannt", 80), type: "Abholung", addr: "", time: "", note: "Bestelldetails fehlen, bitte in Stripe prüfen", lines: ["(Bezahlte Bestellung, Details siehe Stripe)"], total: (s.amount_total || 0) / 100, fee: 0, km: 0, paid: true, paidAt: Date.now(), phone };
       await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
       if (pend) await kv.delete(`p:${id}`);
+      await notifyTelegram(env, rec);
     }
   }
   return json({ received: true });
