@@ -204,6 +204,10 @@ async function handleCheckout(b, req, env) {
   const name = str(b.name, 80);
   const lief = b.fulfil === "Lieferung";
   if (!name) return json({ error: "name" }, 400);
+  const phoneRaw = String(b.phone || "").replace(/[^\d+]/g, "");
+  const phoneDigits = phoneRaw.replace(/\D/g, "");
+  if (phoneDigits.length < 8 || phoneDigits.length > 15) return json({ error: "phone" }, 400);
+  const phone = phoneRaw.slice(0, 20);
   const addr = lief ? str(b.addr, 200) : "";
   if (lief && addr.length < 6) return json({ error: "addr" }, 400);
   // Preise serverseitig nachrechnen
@@ -233,7 +237,7 @@ async function handleCheckout(b, req, env) {
   const t0 = Date.now();
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -245,7 +249,6 @@ async function handleCheckout(b, req, env) {
   p.set("metadata[order_id]", id);
   p.set("payment_intent_data[metadata][order_id]", id);
   p.set("payment_intent_data[description]", `Bestellung ${name} (${lief ? "Lieferung" : "Abholung"})`);
-  p.set("phone_number_collection[enabled]", "true");
   p.set("custom_text[submit][message]", "Mit Klick auf „Bezahlen“ bestellst du verbindlich und zahlungspflichtig. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht.");
   p.set("expires_at", String(Math.floor(Date.now() / 1000) + 1860));
   let n = 0;
@@ -334,7 +337,7 @@ async function handleStripeWebhook(req, env) {
     if (id && s.payment_status === "paid" && !(await kv.get(`o:${id}`))) {
       const pend = await getJSON(kv, `p:${id}`);
       const rec = pend
-        ? { ...pend, paid: true, paidAt: Date.now(), amount: s.amount_total, phone }
+        ? { ...pend, paid: true, paidAt: Date.now(), amount: s.amount_total, phone: pend.phone || phone }
         : { id, t: Date.now(), name: str((s.customer_details && s.customer_details.name) || "Unbekannt", 80), type: "Abholung", addr: "", time: "", note: "Bestelldetails fehlen, bitte in Stripe prüfen", lines: ["(Bezahlte Bestellung, Details siehe Stripe)"], total: (s.amount_total || 0) / 100, fee: 0, km: 0, paid: true, paidAt: Date.now(), phone };
       await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
       if (pend) await kv.delete(`p:${id}`);
