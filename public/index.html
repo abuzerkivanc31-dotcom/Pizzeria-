@@ -406,28 +406,29 @@ const MENU={
   ["Monte","Schinken, Salami",[8,9],[9,10]],["Rustica","Salami, Champignons",[8.5,9.5],[8.5,9.5]],["Saporito","Chicken, Champignons",[7.5,8.5],[8.5,9.5]],
   ["Hawaii","Schinken, Ananas",[7.5,8.5],[8.5,9.5]],["Tutto","Schinken, Salami, Champignons",[9,10],[10,11]],
   ["Vegetale","Champignons, Paprika, Mais, gekochtes Ei",[9,10],[10,11]],["Capri","Champignons, Salami, Paprika, Zwiebeln",[8.5,9.5],[9.5,10.5]],
-  ["Texas Pizza BBQ","Chicken, BBQ-Soße, Mais",[9,10],[10,11]],["Pizza Mozzarella","Frische Tomatenscheiben, Mozzarella, Basilikum",[8.5,9.5],[9.5,10.5]]],
-  chips:["Extra-Zutaten: Fleisch, Thunfisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b> (bei der Auswahl wählbar)"]},
+  ["Texas Pizza BBQ","Chicken, BBQ-Soße, Mais",[9,10],[10,11]],["Pizza Mozzarella","Frische Tomatenscheiben, Mozzarella, Basilikum",[8.5,9.5],[9.5,10.5]]]},
  broetchen:{title:"Gefüllte Pizzabrötchen (Panini)",prefix:"Pizzabrötchen ",pics:["broetchen1","broetchen2"],opt:{tops:1},items:[
   ["Pizzabrötchen mit Kräuterbutter","",[3.5],[4.5],false],["Gauda","",[4.5],[5.5]],["Thunfisch","",[5.5],[6.5]],["Salami","",[5.5],[6.5]],["Sucuk","",[6],[7]],
-  ["Chicken","",[6],[7]],["Schinken","",[5.5],[6.5]],["Mozzarella & frische Tomaten","",[6],[7]],["Schinken + Ananas","",[6],[7]],["Chicken BBQ Sauce","",[6.5],[7.5]]],
-  chips:["Extra-Zutaten: Fleisch, Thunfisch, Käse <b>+1,50 €</b>, sonstige <b>+1,00 €</b>"]},
+  ["Chicken","",[6],[7]],["Schinken","",[5.5],[6.5]],["Mozzarella & frische Tomaten","",[6],[7]],["Schinken + Ananas","",[6],[7]],["Chicken BBQ Sauce","",[6.5],[7.5]]]},
  baguette:{title:"Baguette",note:"Eisbergsalat und Gurken sind enthalten. Dazu 2 Soßen inklusive, jede weitere +1,00 €.",prefix:"Baguette ",pics:["stock-baguette"],opt:{sauce:2,tops:1,bake:1},items:[
   ["Thunfisch","",[5],[6]],["Salami","",[5],[6]],["Ei","",[5],[6]],["Gauda","",[5],[6]],["Mozzarella","",[5.5],[6.5]],["Schinken","",[5],[6]],
-  ["Sucuk","",[5.5],[6.5]],["Chicken","",[5.5],[6.5]],["Nuggets","",[5],[6]],["König","3 Beilagen",[8],[8]],["Veggie","",[5.5],[6.5]]],
-  chips:["Mit Käse überbacken <b>+1,00 €</b>","Extra-Zutaten ab <b>+1,00 €</b>"]},
+  ["Sucuk","",[5.5],[6.5]],["Chicken","",[5.5],[6.5]],["Nuggets","",[5],[6]],["König","3 Beilagen",[8],[8]],["Veggie","",[5.5],[6.5]]]},
  pommes:{title:"Pommes & Nuggets",note:"Dazu 2 Soßen inklusive, jede weitere +1,00 €.",pics:["stock-nuggets"],opt:{sauce:2},items:[
   ["Pommes klein","",[3],[3.5]],["Pommes groß","",[3.5],[4]],["Pomm Chicken","",[6],[7]],
   ["Pommes Spezial","Mit Curryketchup und Mayo",[6],[6],{sauce:0,fixed:["Curryketchup","Mayo"],pick:{label:"Zwiebeln",options:["Röstzwiebeln","Rote Zwiebeln"]}}],
   ["6er Nuggets","",[6],[6.5]],["9er Nuggets","",[8],[8.5]],["12er Nuggets","",[10],[10.5]]]},
  bowl:{title:"Königs Bowl",pics:["bowl"],opt:{sauce:2,pick:{label:"Finish",options:["Süß","Scharf"]}},items:[
   ["Königs Bowl","Pommes + Käse + Topping + Salat, Gurke, Tomaten. 2 Soßen inklusive.",[7.5],[8.5]]]},
- salate:{title:"Salate",note:"Jeweils mit 1 Soße nach Wahl (bitte bei der Anmerkung eintragen).",pics:["salat1","salat2","salat3","salat4"],opt:false,items:[
+ salate:{title:"Salate",note:"Dazu 1 Soße inklusive, jede weitere +1,00 €.",pics:["salat1","salat2","salat3","salat4"],opt:{sauce:1,sauces:["Aioli","Joghurt Dressing","Cocktail"]},items:[
   ["Basic Salat","Eisberg, Tomate, Gurke, Zwiebel",[5.5],[5.5]],["König Salat","gebratene Hähnchenbrust, Eisberg, Tomate, Gurke, Zwiebel",[7],[7]],
   ["Tonno Salat","Thunfisch, Eisberg, Tomate, Gurke, Zwiebel",[6.5],[6.5]],["Bauernsalat","Eisberg, Tomate, Gurke, Zwiebel, Schafskäse",[6.5],[6.5]],
-  ["Ei Salat","Ei, Eisberg, Tomate, Gurke, Zwiebel",[6.5],[6.5]]]}
+  ["Ei Salat","Ei, Eisberg, Tomate, Gurke, Zwiebel",[6.5],[6.5]]]},
+ flaschen:{"title":"Getränke: Flaschen (inkl. Pfand)","pics":[],"opt":false,"items":[["Coca Cola 0,5l","",[3],[3]],["Coca Cola Zero 0,5l","",[3],[3]],["Fanta 0,5l","",[3],[3]],["Uludag 0,5l","",[3],[3]],["Vio Wasser Still 0,5l","",[3],[3]],["Vio Wasser Medium 0,5l","",[3],[3]],["Fuze Tea Pfirsich 0,4l","",[3],[3]],["Fuze Tea Pfirsich-Hibiskus 0,4l","",[3],[3]],["Fuze Tea Zitrone-Zitronengras 0,4l","",[3],[3]],["Powerade Blau (Mountain Blast) 0,5l","",[3],[3]],["Powerade Rot (Wild Cherry) 0,5l","",[3],[3]],["Erdbeer Milch 0,5l","ohne Pfand",[3],[3]],["Vanille Milch 0,5l","ohne Pfand",[3],[3]],["Bananen Milch 0,5l","ohne Pfand",[3],[3]]]},
+ dosen:{"title":"Getränke: Dosen (inkl. Pfand)","pics":[],"opt":false,"items":[["Coca Cola 0,33l","",[2.5],[2.5]],["Coca Cola Zero 0,33l","",[2.5],[2.5]],["Fanta 0,33l","",[2.5],[2.5]],["Fanta Exotic 0,33l","",[2.5],[2.5]],["Paulaner Spezi 0,33l","",[2.5],[2.5]],["Red Bull Açaí (Lila) 250ml","",[2.5],[2.5]],["Red Bull Juneberry (Blau) 250ml","",[2.5],[2.5]],["Red Bull Kokos-Blaubeere (Weiß) 250ml","",[2.5],[2.5]],["Red Bull Kaktusfrucht (Grün) 250ml","",[2.5],[2.5]],["Red Bull Aprikose-Erdbeere (Orange) 250ml","",[2.5],[2.5]],["Red Bull Winter Edition 250ml","",[2.5],[2.5]],["Red Bull Sugarfree 250ml","",[2.5],[2.5]],["Red Bull 250ml","",[2.5],[2.5]],["Hot Blood Classic 250ml","",[2.5],[2.5]]]},
+ durst:{"title":"Getränke: Durstlöscher","pics":[],"opt":false,"items":[["Eistee Pfirsich","",[1.5],[1.5]],["Eistee Mango","",[1.5],[1.5]],["Wassermelone","",[1.5],[1.5]],["Multivitamin 12 Frucht","",[1.5],[1.5]],["Waldmeister","",[1.5],[1.5]],["Tropical","",[1.5],[1.5]],["Granatapfel-Zitrone","",[1.5],[1.5]],["Blaubeer-Vanille","",[1.5],[1.5]],["Banane-Kirsch","",[1.5],[1.5]],["Orange","",[1.5],[1.5]]]},
+ capri:{"title":"Getränke: Capri Sun","pics":[],"opt":false,"items":[["Orange","",[1],[1]],["Kirsche","",[1],[1]],["Jungle Drink","",[1],[1]]]}
 };
-const ORDER=["pizza","broetchen","baguette","pommes","bowl","salate"];
+const ORDER=["pizza","broetchen","baguette","pommes","bowl","salate","flaschen","dosen","durst","capri"];
 
 /* ===== PREISE (Standard + Änderungen vom Inhaber) ===== */
 let PR={},FULFIL=null;   // {schlüssel:{d:Preis Mo–Fr 07–14:30, e:Preis sonst}}
@@ -469,7 +470,7 @@ const chips=c=>c?`<div class="chips">${c.map(x=>`<span class="chip">${x}</span>`
 function renderMenu(){
   document.getElementById("menu").innerHTML=ORDER.map(ck=>{
     const C=MENU[ck];
-    return `<div class="cat" id="cat-${ck}"><h3>${C.title}</h3>${C.note?`<p class="note">${C.note}</p>`:""}<div class="catgrid"><div><div class="items">${C.items.map((it,i)=>`<div class="it"><div><b>${it[0]}</b>${it[1]?`<small>${it[1]}</small>`:""}</div><div class="buy">${it[2].map((_,si)=>{const k=`${ck}|${i}|${si}`;return `<button class="add" data-key="${k}">${C.sizes?C.sizes[si]+" · ":""}${eur(basePrice(k))}<span>＋</span></button>`}).join("")}</div></div>`).join("")}</div>${chips(C.chips)}</div>${pics(C.pics)}</div></div>`;
+    return `<div class="cat" id="cat-${ck}"><h3>${C.title}</h3>${C.note?`<p class="note">${C.note}</p>`:""}<div class="catgrid${C.pics&&C.pics.length?"":" one"}"><div><div class="items">${C.items.map((it,i)=>`<div class="it"><div><b>${it[0]}</b>${it[1]?`<small>${it[1]}</small>`:""}</div><div class="buy">${it[2].map((_,si)=>{const k=`${ck}|${i}|${si}`;return `<button class="add" data-key="${k}">${C.sizes?C.sizes[si]+" · ":""}${eur(basePrice(k))}<span>＋</span></button>`}).join("")}</div></div>`).join("")}</div>${chips(C.chips)}</div>${C.pics&&C.pics.length?pics(C.pics):""}</div></div>`;
   }).join("");
   $("mnav").innerHTML=ORDER.map(ck=>`<button data-go="${ck}">${MENU[ck].title.replace(/ \(.*\)/,"")}</button>`).join("");
 }
@@ -528,7 +529,7 @@ function openOpt(k){
   let h="";
   if(o.fixed)h+=`<div class="og"><h4>Enthalten</h4><div class="hint">${o.fixed.join(", ")} sind automatisch dabei.</div></div>`;
   if(o.pick)h+=`<div class="og"><h4>${o.pick.label} wählen</h4><div class="opts">${o.pick.options.map((x,i)=>`<label><input type="radio" name="pick" value="${esc(x)}" ${i?"":"checked"}>${x}</label>`).join("")}</div></div>`;
-  if(o.sauce!==undefined)h+=`<div class="og"><h4>Soßen</h4><div class="hint">${o.sauce?`${o.sauce} Soßen sind inklusive, jede weitere kostet +${eur(addon("sauce"))}.`:`Jede zusätzliche Soße kostet +${eur(addon("sauce"))}.`}</div><div class="opts">${SAUCES.map(x=>`<label><input type="checkbox" name="sauce" value="${esc(x)}">${x}</label>`).join("")}</div></div>`;
+  if(o.sauce!==undefined)h+=`<div class="og"><h4>Soßen</h4><div class="hint">${o.sauce?`${o.sauce} Soßen sind inklusive, jede weitere kostet +${eur(addon("sauce"))}.`:`Jede zusätzliche Soße kostet +${eur(addon("sauce"))}.`}</div><div class="opts">${(o.sauces||SAUCES).map(x=>`<label><input type="checkbox" name="sauce" value="${esc(x)}">${x}</label>`).join("")}</div></div>`;
   if(o.tops)h+=`<div class="og"><h4>Extra-Zutaten</h4><div class="hint">Fleisch, Thunfisch, Käse +${eur(addon("m"))} · sonstige +${eur(addon("o"))} pro Zutat.</div><div class="opts">${TOPS.map(x=>`<label><input type="checkbox" name="top" value="${esc(x[0])}">${x[0]} <small>+${eur(addon(x[1]))}</small></label>`).join("")}</div></div>`;
   if(o.bake)h+=`<div class="og"><h4>Überbacken</h4><div class="opts"><label><input type="checkbox" name="bake">Mit Käse überbacken <small>+${eur(addon("bake"))}</small></label></div></div>`;
   $("opt-title").textContent=lineName(k);$("opt-body").innerHTML=h;$("opt-note").value="";
