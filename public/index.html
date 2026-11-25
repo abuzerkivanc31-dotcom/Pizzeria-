@@ -286,6 +286,8 @@ dialog.full[open]{display:block}
   <div class="sum"><span>Summe</span><span id="cart-total"></span></div>
   <label class="l" for="c-name">Dein Name *</label>
   <input type="text" id="c-name" placeholder="Vor- und Nachname" autocomplete="name">
+  <label class="l" for="c-phone">Handynummer * (für Rückfragen zu deiner Bestellung)</label>
+  <input type="text" id="c-phone" placeholder="z. B. 0172 1234567" autocomplete="tel" inputmode="tel">
   <div class="radio">
     <label><input type="radio" name="ctype" value="Abholung" checked><span>🏃 Abholung</span></label>
     <label><input type="radio" name="ctype" value="Lieferung"><span>🛵 Lieferung</span></label>
@@ -786,6 +788,7 @@ btn.onclick=async()=>{
 const name=$("c-name").value.trim(),addr=$("c-addr").value.trim(),lief=FULFIL==="Lieferung",R=window.ROUTE;
 if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
 if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
+const phone=$("c-phone").value.trim();if(phone.replace(/\D/g,"").length<8){msg.textContent="Bitte gib deine Handynummer an, damit wir dich bei Rückfragen erreichen.";$("c-phone").focus();return}
 if(lief){
 if(!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();return}
 if(!R||R.addr!==addr){msg.textContent="Bitte kurz warten, bis die Fahrstrecke für deine Adresse berechnet ist.";return}
@@ -793,10 +796,10 @@ if(total()<R.min){msg.textContent="Der Mindestbestellwert für deine Lieferadres
 }
 btn.disabled=true;msg.textContent="Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
 try{
-const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),fulfil:FULFIL,name,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
+const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.url){location.href=j.url;return}
-msg.textContent=({closed:"Wir haben gerade geschlossen. Online-Zahlung ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
+msg.textContent=({closed:"Wir haben gerade geschlossen. Online-Zahlung ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
 }catch(e){msg.textContent="Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an."}
 btn.disabled=false;updPay();
 };
