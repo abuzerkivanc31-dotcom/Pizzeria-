@@ -280,7 +280,17 @@ async function verifyStripe(raw, header, secret) {
 // Aktiv nur, wenn TELEGRAM_BOT_TOKEN und TELEGRAM_CHAT_ID gesetzt sind. Fehler dürfen die Bestellung nie stören.
 async function notifyTelegram(env, rec) {
   try {
-    if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+    if (!env.TELEGRAM_BOT_TOKEN) return;
+    // Chat-ID: fest per Secret gesetzt oder automatisch aus der ersten Nachricht an den Bot ermittelt (und gemerkt)
+    let chat = env.TELEGRAM_CHAT_ID || (await env.DATA.get("tgchat"));
+    if (!chat) {
+      const u = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/getUpdates");
+      const uj = await u.json().catch(() => ({}));
+      const first = ((uj && uj.result) || []).find((x) => x.message && x.message.chat && x.message.chat.type === "private");
+      if (!first) { console.log("Telegram: noch keine Nachricht an den Bot"); return; }
+      chat = String(first.message.chat.id);
+      await env.DATA.put("tgchat", chat);
+    }
     const eurS = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
     const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0);
     const text = [
@@ -299,7 +309,7 @@ async function notifyTelegram(env, rec) {
     const r = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }),
+      body: JSON.stringify({ chat_id: chat, text }),
     });
     if (!r.ok) console.log("Telegram-Hinweis fehlgeschlagen", r.status);
   } catch (e) {
