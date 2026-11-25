@@ -187,7 +187,9 @@ async function refreshEvents(env) {
 
 export default {
   async fetch(req, env) {
-    const { pathname } = new URL(req.url);
+    const url = new URL(req.url);
+    if (url.hostname.startsWith("www.")) { url.hostname = url.hostname.slice(4); return Response.redirect(url.toString(), 301); }
+    const { pathname } = url;
     if (pathname === "/api" || pathname.startsWith("/api/")) return handleApi(req, env);
     return env.ASSETS.fetch(req); // normale Seiten aus dem Ordner "public"
   },
