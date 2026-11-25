@@ -182,6 +182,92 @@ function priceCart(menu, PR, mode, cart) {
   return { lines: out, sum: Math.round(out.reduce((a, x) => a + x.unit * x.qty, 0) * 100) / 100 };
 }
 
+async function stripePost(env, path, params) {
+  const r = await fetch("https://api.stripe.com/v1/" + path, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + env.STRIPE_SECRET_KEY, "content-type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  return { ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) };
+}
+async function handleCheckout(b, req, env) {
+  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) return json({ error: "nopay" }, 503);
+  const kv = env.DATA;
+  // Missbrauchsschutz: höchstens 8 Zahlungsversuche pro IP in 10 Minuten
+  const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
+  const rlKey = `ck:${ipHash}:${Math.floor(Date.now() / 600000)}`;
+  const cnt = Number((await kv.get(rlKey)) || 0);
+  if (cnt >= 8) return json({ error: "limit" }, 429);
+  await kv.put(rlKey, String(cnt + 1), { expirationTtl: 1200 });
+  // Hat der Inhaber auf "geschlossen" gestellt?
+  const st = await getJSON(kv, "status");
+  if (st && st.state === "closed" && st.expires > Date.now()) return json({ error: "closed" }, 409);
+  const name = str(b.name, 80);
+  const lief = b.fulfil === "Lieferung";
+  if (!name) return json({ error: "name" }, 400);
+  const addr = lief ? str(b.addr, 200) : "";
+  if (lief && addr.length < 6) return json({ error: "addr" }, 400);
+  // Preise serverseitig nachrechnen
+  const menu = await (await env.ASSETS.fetch(new URL("/menu.json", req.url))).json();
+  const PRd = await getJSON(kv, "prices");
+  const PR = (PRd && PRd.prices) || {};
+  const pm = await getJSON(kv, "pmode");
+  const mode = lief ? "e" : pm && pm.until > Date.now() && (pm.mode === "d" || pm.mode === "e") ? pm.mode : autoMode();
+  const priced = priceCart(menu, PR, mode, b.cart);
+  if (priced.error) return json({ error: "cart" }, 400);
+  let fee = 0, km = 0;
+  if (lief) {
+    if (!env.GOOGLE_MAPS_KEY) return json({ error: "route" }, 503);
+    let a = addr;
+    if (!/\d{5}/.test(a) && !a.includes(",")) a += ", Krefeld";
+    const r = await routeKm(env, a);
+    if (r.error) return json({ error: r.error === "addr" ? "addr" : "route" }, r.error === "addr" ? 422 : 502);
+    const t = tierFor(r.km);
+    if (priced.sum < t.min) return json({ error: "min", min: t.min }, 400);
+    fee = t.fee;
+    km = Math.round(r.km * 10) / 10;
+  }
+  const total = Math.round((priced.sum + fee) * 100) / 100;
+  if (total > 500) return json({ error: "cart" }, 400);
+  if (Math.round(Number(b.clientTotal) * 100) !== Math.round(total * 100)) return json({ error: "mismatch", total }, 409);
+  // Bestellung bis zur Zahlung zwischenspeichern (2 Stunden)
+  const t0 = Date.now();
+  const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
+  const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  // Stripe-Checkout-Sitzung anlegen
+  const origin = new URL(req.url).origin;
+  const p = new URLSearchParams();
+  p.set("mode", "payment");
+  p.set("locale", "de");
+  p.set("success_url", origin + "/?bezahlt=1");
+  p.set("cancel_url", origin + "/?bezahlt=0");
+  p.set("client_reference_id", id.replace(":", "-"));
+  p.set("metadata[order_id]", id);
+  p.set("payment_intent_data[metadata][order_id]", id);
+  p.set("payment_intent_data[description]", `Bestellung ${name} (${lief ? "Lieferung" : "Abholung"})`);
+  p.set("phone_number_collection[enabled]", "true");
+  p.set("custom_text[submit][message]", "Mit Klick auf „Bezahlen“ bestellst du verbindlich und zahlungspflichtig. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht.");
+  p.set("expires_at", String(Math.floor(Date.now() / 1000) + 1860));
+  let n = 0;
+  const item = (nm, desc, cents, q) => {
+    p.set(`line_items[${n}][price_data][currency]`, "eur");
+    p.set(`line_items[${n}][price_data][product_data][name]`, nm);
+    if (desc) p.set(`line_items[${n}][price_data][product_data][description]`, desc.slice(0, 480));
+    p.set(`line_items[${n}][price_data][unit_amount]`, String(cents));
+    p.set(`line_items[${n}][quantity]`, String(q));
+    n++;
+  };
+  for (const x of priced.lines) item(x.name, [...x.det, x.note ? "Anmerkung: " + x.note : ""].filter(Boolean).join(" · "), Math.round(x.unit * 100), x.qty);
+  if (fee > 0) item("Liefergebühr", `${String(km).replace(".", ",")} km Fahrstrecke`, Math.round(fee * 100), 1);
+  const r = await stripePost(env, "checkout/sessions", p);
+  if (!r.ok || !r.j.url) {
+    await kv.delete(`p:${id}`);
+    return json({ error: "stripe" }, 502);
+  }
+  return json({ url: r.j.url });
+}
+
 async function handleApi(req, env) {
   const kv = env.DATA;
   const path = new URL(req.url).pathname.replace(/\/+$/, "").replace(/^\/api/, "");
