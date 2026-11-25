@@ -323,7 +323,7 @@ async function handleApi(req, env) {
     let b = {};
     try { b = await req.json(); } catch (e) {}
 
-    if (path === "/orders") return saveOrder(b, req, kv); // öffentlich
+    if (path === "/orders") return json({ error: "gone" }, 410); // Bestellung nur noch über Online-Zahlung
     if (path === "/route") return handleRoute(b, req, env); // öffentlich, begrenzt
     if (path === "/checkout") return handleCheckout(b, req, env); // öffentlich, begrenzt
 
