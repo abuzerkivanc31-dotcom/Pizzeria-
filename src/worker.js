@@ -44,9 +44,8 @@ async function routeKm(env, addr) {
   });
   if (!r.ok) return { error: r.status === 400 || r.status === 404 ? "addr" : "upstream" };
   const j = await r.json();
-  const m = j.routes && j.routes[0] && j.routes[0].distanceMeters;
-  if (typeof m !== "number") return { error: "addr" };
-  return { km: m / 1000 };
+  if (!j.routes || !j.routes[0]) return { error: "addr" };
+  return { km: (j.routes[0].distanceMeters || 0) / 1000 };
 }
 async function handleRoute(b, req, env) {
   if (!env.GOOGLE_MAPS_KEY) return json({ error: "nokey" }, 503);
@@ -181,7 +180,6 @@ function priceCart(menu, PR, mode, cart) {
   }
   return { lines: out, sum: Math.round(out.reduce((a, x) => a + x.unit * x.qty, 0) * 100) / 100 };
 }
-
 async function stripePost(env, path, params) {
   const r = await fetch("https://api.stripe.com/v1/" + path, {
     method: "POST",
@@ -267,6 +265,39 @@ async function handleCheckout(b, req, env) {
   }
   return json({ url: r.j.url });
 }
+async function verifyStripe(raw, header, secret) {
+  const h = String(header || "");
+  const t = Number((h.split(",").find((x) => x.startsWith("t=")) || "").slice(2));
+  const sigs = h.split(",").filter((x) => x.startsWith("v1=")).map((x) => x.slice(3));
+  if (!t || !sigs.length || Math.abs(Date.now() / 1000 - t) > 300) return false;
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${t}.${raw}`));
+  const hex = [...new Uint8Array(mac)].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return sigs.some((s) => same(s, hex));
+}
+// Stripe meldet bezahlte Sitzungen: dann wird die Bestellung für den Inhaber sichtbar ("bezahlt")
+async function handleStripeWebhook(req, env) {
+  if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "nokey" }, 503);
+  const raw = await req.text();
+  if (!(await verifyStripe(raw, req.headers.get("stripe-signature"), env.STRIPE_WEBHOOK_SECRET))) return json({ error: "sig" }, 400);
+  let ev;
+  try { ev = JSON.parse(raw); } catch (e) { return json({ error: "json" }, 400); }
+  const kv = env.DATA;
+  if (ev.type === "checkout.session.completed" || ev.type === "checkout.session.async_payment_succeeded") {
+    const s = (ev.data && ev.data.object) || {};
+    const id = s.metadata && s.metadata.order_id;
+    const phone = str((s.customer_details && s.customer_details.phone) || "", 40);
+    if (id && s.payment_status === "paid" && !(await kv.get(`o:${id}`))) {
+      const pend = await getJSON(kv, `p:${id}`);
+      const rec = pend
+        ? { ...pend, paid: true, paidAt: Date.now(), amount: s.amount_total, phone }
+        : { id, t: Date.now(), name: str((s.customer_details && s.customer_details.name) || "Unbekannt", 80), type: "Abholung", addr: "", time: "", note: "Bestelldetails fehlen, bitte in Stripe prüfen", lines: ["(Bezahlte Bestellung, Details siehe Stripe)"], total: (s.amount_total || 0) / 100, fee: 0, km: 0, paid: true, paidAt: Date.now(), phone };
+      await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
+      if (pend) await kv.delete(`p:${id}`);
+    }
+  }
+  return json({ received: true });
+}
 
 async function handleApi(req, env) {
   const kv = env.DATA;
@@ -282,16 +313,18 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: false });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET });
     return json({ error: "not found" }, 404);
   }
 
   if (req.method === "POST") {
+    if (path === "/stripe-webhook") return handleStripeWebhook(req, env); // braucht den Rohtext
     let b = {};
     try { b = await req.json(); } catch (e) {}
 
     if (path === "/orders") return saveOrder(b, req, kv); // öffentlich
     if (path === "/route") return handleRoute(b, req, env); // öffentlich, begrenzt
+    if (path === "/checkout") return handleCheckout(b, req, env); // öffentlich, begrenzt
 
     // Zwei PINs: OWNER_PIN sieht alles, STAFF_PIN sieht alles außer der Bestellhistorie
     const given = String(b.pin || "").trim();
