@@ -24,7 +24,7 @@ nav ul a:hover{color:var(--text)}
 .btn.primary:hover{filter:brightness(1.1);transform:translateY(-1px)}
 .btn.ghost:hover{border-color:var(--text)}
 .btn.wa{background:#25d366;border-color:#25d366;color:#06240f}
-.orderstrip{position:sticky;top:64px;z-index:9;background:#1b1b1e;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.orderstrip{background:#1b1b1e;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .orderstrip .wrap{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:center;justify-content:space-between;padding-top:18px;padding-bottom:18px}
 .os-title b{display:block;font-size:1.15rem}.os-title span{color:var(--mute);font-size:.88rem}
 .os-btns{display:flex;flex-wrap:wrap;gap:10px}
@@ -147,14 +147,15 @@ dialog.full[open]{display:block}
 .ctabox h2{margin:0}.ctabox p{color:var(--mute);margin:4px 0 0}
 .pm{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:6px 0 2px;font-size:.9rem}
 .pm b{color:var(--gold)}
-@media(max-width:700px){nav ul li:not(:last-child){display:none}.hero{padding-top:50px}}
+.ord{border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;background:#131315}.ord .oh{display:flex;justify-content:space-between;gap:10px;align-items:center}.ord .oh span{color:var(--mute);font-size:.82rem}.ord .os{color:var(--mute);font-size:.86rem;margin:2px 0}.ord pre{white-space:pre-wrap;font:inherit;font-size:.9rem;margin:8px 0}
+@media(max-width:700px){nav ul{display:none}.hero{padding-top:50px}}
 </style>
 </head>
 <body>
 
 <nav><div class="wrap">
   <a class="logo" href="#top">Pizza & Baguettehaus <span>am Königspalast</span></a>
-  <ul><li><a href="#status">Geöffnet?</a></li><li><a href="#karte">Speisekarte</a></li><li><a href="#events">Eventtage</a></li><li><a href="#bewertungen">Bewertungen</a></li><li><a href="#kontakt">Kontakt</a></li><li><button class="owner-open navown">🔑 Inhaber</button></li></ul>
+  <ul><li><a href="#status">Geöffnet?</a></li><li><a href="#karte">Speisekarte</a></li><li><a href="#events">Eventtage</a></li><li><a href="#bewertungen">Bewertungen</a></li><li><a href="#kontakt">Kontakt</a></li></ul>
 </div></nav>
 
 <div class="orderstrip"><div class="wrap">
@@ -237,7 +238,7 @@ dialog.full[open]{display:block}
 
 <footer><div class="wrap">
   <span>© <span id="yr"></span> Pizza & Baguettehaus am Königspalast, Krefeld</span>
-  <span><a href="impressum.html">Impressum</a> · <a href="datenschutz.html">Datenschutz</a> · <button class="owner-open">Inhaber-Login</button></span>
+  <span><a href="impressum.html">Impressum</a> · <a href="datenschutz.html">Datenschutz</a> · <button class="owner-open">Inhaber</button></span>
 </div></footer>
 
 <div class="fab">
@@ -288,7 +289,7 @@ dialog.full[open]{display:block}
   <input type="text" id="c-time" placeholder="z. B. 12:30 Uhr oder „so schnell wie möglich“">
   <label class="l" for="c-note">Allgemeine Anmerkung (optional)</label>
   <textarea id="c-note" placeholder="z. B. Allergien, Wechselgeld …"></textarea>
-  <div class="legal">⚠️ <b>So geht es weiter:</b> Du wirst direkt zu WhatsApp weitergeleitet. Deine Nachricht ist dort schon vorbereitet, du musst sie nur noch abschicken. <b>Verbindlich ist die Bestellung erst, wenn wir sie dir in WhatsApp bestätigt haben</b> (gilt für Abholung und Lieferung). Preise ohne Gewähr.</div>
+  <div class="legal">⚠️ <b>So geht es weiter:</b> Du wirst direkt zu WhatsApp weitergeleitet. Deine Nachricht ist dort schon vorbereitet, du musst sie nur noch abschicken. <b>Verbindlich ist die Bestellung erst, wenn wir sie dir in WhatsApp bestätigt haben</b> (gilt für Abholung und Lieferung). Preise ohne Gewähr. Zur Übersicht für den Laden wird deine Anfrage zusätzlich 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>).</div>
   <div class="col">
     <button class="btn wa" id="cart-send">💬 Weiter zu WhatsApp</button>
     <button class="btn ghost" id="cart-clear">Warenkorb leeren</button>
@@ -300,25 +301,45 @@ dialog.full[open]{display:block}
 <!-- Inhaber -->
 <dialog id="owner">
   <h3>Inhaber</h3>
-  <p id="owner-info"></p>
-  <input type="password" id="pin" placeholder="PIN" autocomplete="current-password">
-  <div class="pm" id="pm-info"></div>
-  <div class="col">
-    <button class="btn ghost" id="pm-switch"></button>
-    <button class="btn ghost" id="pm-auto" hidden>↩️ Preise wieder automatisch</button>
-    <button class="btn wa" data-set="open">✅ Wir haben jetzt geöffnet</button>
-    <button class="btn primary" data-set="closed">⛔ Wir haben geschlossen</button>
-    <button class="btn ghost" data-set="auto">↩️ Status wieder automatisch</button>
-    <button class="btn ghost" id="owner-prices">💶 Preise anpassen</button>
-    <button class="btn ghost" id="owner-close">Schließen</button>
+  <div id="owner-login">
+    <p>Bitte PIN eingeben.</p>
+    <input type="password" id="pin" placeholder="PIN" autocomplete="current-password" inputmode="numeric">
+    <div class="col">
+      <button class="btn wa" id="owner-go">Anmelden</button>
+      <button class="btn ghost" id="owner-close">Schließen</button>
+    </div>
+  </div>
+  <div id="owner-panel" hidden>
+    <div class="pm" id="pm-info"></div>
+    <div class="col">
+      <button class="btn ghost" id="pm-switch"></button>
+      <button class="btn ghost" id="pm-auto" hidden>↩️ Preise wieder automatisch</button>
+      <button class="btn wa" data-set="open">✅ Wir haben jetzt geöffnet</button>
+      <button class="btn primary" data-set="closed">⛔ Wir haben geschlossen</button>
+      <button class="btn ghost" data-set="auto">↩️ Status wieder automatisch</button>
+      <button class="btn ghost" id="owner-orders">📋 Bestellanfragen ansehen</button>
+      <button class="btn ghost" id="owner-prices">💶 Preise anpassen</button>
+      <button class="btn ghost" id="owner-logout">Abmelden</button>
+    </div>
   </div>
   <div class="msg" id="owner-msg"></div>
+</dialog>
+
+<dialog id="orders">
+  <h3>📋 Bestellanfragen</h3>
+  <p>Anfragen, die Kunden über die Website per WhatsApp gesendet haben. Sie werden nach 30 Tagen automatisch gelöscht. Verbindlich ist eine Bestellung erst, wenn du sie in WhatsApp bestätigt hast.</p>
+  <div id="ord-list"></div>
+  <div class="col" style="margin-top:14px">
+    <button class="btn ghost" id="ord-refresh">Aktualisieren</button>
+    <button class="btn ghost" id="ord-clear">Alle löschen</button>
+    <button class="btn ghost" id="ord-close">Schließen</button>
+  </div>
+  <div class="msg" id="ord-msg"></div>
 </dialog>
 
 <dialog id="prices">
   <h3>💶 Preise anpassen</h3>
   <p>Hier kannst du alle Preise ändern. Sie gelten sofort auf der Seite. Links der Preis <b>Mo–Fr 07:00–14:30 Uhr</b>, rechts der Preis <b>zu allen anderen Zeiten</b> (Nachmittag, Abend, Eventtage, Wochenende). Die Seite wählt den richtigen Preis automatisch.</p>
-  <input type="password" id="pr-pin" placeholder="PIN">
   <div id="pr-list"></div>
   <div class="col" style="margin-top:14px">
     <button class="btn wa" id="pr-save">Speichern</button>
@@ -327,7 +348,6 @@ dialog.full[open]{display:block}
   </div>
   <div class="msg" id="pr-msg"></div>
 </dialog>
-
 <script src="events.js"></script>
 <script>
 /* ===== EINSTELLUNGEN ===== */
@@ -511,7 +531,7 @@ function renderCart(){
 }
 document.addEventListener("click",e=>{
   const b=e.target.closest(".add");
-  if(b){openOpt(b.dataset.key);b.classList.add("ok");setTimeout(()=>b.classList.remove("ok"),450);return}
+  if(b&&b.dataset.key){openOpt(b.dataset.key);b.classList.add("ok");setTimeout(()=>b.classList.remove("ok"),450);return}
   const q=e.target.closest("[data-q]");
   if(q){const i=+q.dataset.i;CART[i].qty+=+q.dataset.q;if(CART[i].qty<=0)CART.splice(i,1);renderCart()}
 });
@@ -531,12 +551,18 @@ $("cart-send").onclick=()=>{
   const lines=CART.map(x=>`${x.qty}x ${lineName(x.key)} – ${eur(unit(x)*x.qty)}${summary(x).map(t=>`\n   ${t}`).join("")}${x.note?`\n   Anmerkung: ${x.note}`:""}`);
   const t=$("c-time").value.trim(),n=$("c-note").value.trim();
   const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t:""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
+  const order={name,type,addr:type==="Lieferung"?addr:"",time:t,note:n,lines,total:total()};
+  try{
+    if(STATUS_API)fetch(STATUS_API+"/orders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(order),keepalive:true}).catch(()=>{});
+    else{const l=store.get("demoOrders")||[];l.unshift({...order,id:String(Date.now()),t:Date.now()});store.set("demoOrders",l.slice(0,50))}
+  }catch(e){}
   const url=`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
   msg.innerHTML=`Du wirst zu WhatsApp weitergeleitet. Dort musst du die vorbereitete Nachricht nur noch abschicken. Falls nichts passiert: <a href="${url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:underline">hier tippen</a>.`;
   const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
 };
 
-/* ===== INHABER: STATUS UND PREISE ===== */
+/* ===== INHABER ===== */
+let OPIN="";   // die PIN wird nur nach erfolgreicher Anmeldung im Arbeitsspeicher gehalten
 async function loadOverride(){
   try{OVERRIDE=STATUS_API?await (await fetch(STATUS_API+"/status",{cache:"no-store"})).json():store.get("demoStatus")}catch(e){OVERRIDE=null}
   PMODE=STATUS_API?((OVERRIDE&&OVERRIDE.pmode)||null):store.get("demoPmode");
@@ -549,10 +575,22 @@ async function loadPrices(){
   renderMenu();persist();
 }
 const dlg=$("owner"),msg=$("owner-msg"),pin=$("pin");
-document.querySelectorAll(".owner-open").forEach(b=>b.onclick=()=>{
-  $("owner-info").textContent=STATUS_API?"PIN eingeben und Status wählen. Er gilt maximal 16 Stunden und springt dann auf automatisch.":`Testmodus (PIN ${DEMO_PIN}): gilt nur in diesem Browser. Für alle Besucher muss der Status-Worker eingerichtet sein.`;
-  try{pin.value=sessionStorage.getItem("pin")||""}catch(e){}msg.textContent="";pmUi();dlg.showModal();
-});
+const post=(path,body)=>fetch(STATUS_API+path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+function ownerShow(logged){$("owner-login").hidden=logged;$("owner-panel").hidden=!logged;msg.textContent="";if(logged)pmUi()}
+document.querySelectorAll(".owner-open").forEach(b=>b.onclick=()=>{pin.value="";ownerShow(!!OPIN);dlg.showModal();if(!OPIN)pin.focus()});
+async function login(){
+  const p=pin.value.trim();if(!p)return;
+  try{
+    const ok=STATUS_API?(await post("/login",{pin:p})).ok:(p===DEMO_PIN);
+    if(!ok){msg.textContent="PIN falsch.";pin.value="";return}
+    OPIN=p;pin.value="";ownerShow(true);
+  }catch(e){msg.textContent="Anmeldung nicht möglich."}
+}
+$("owner-go").onclick=login;
+pin.addEventListener("keydown",e=>{if(e.key==="Enter")login()});
+$("owner-close").onclick=()=>dlg.close();
+$("owner-logout").onclick=()=>{OPIN="";dlg.close()};
+function lost(){OPIN="";ownerShow(false);msg.textContent="Bitte neu anmelden."}
 const MODE_NAME={d:"Schulzeit-Preise (Mo–Fr 07:00–14:30 Uhr)",e:"Eventzeit-Preise (alle anderen Zeiten)"};
 function pmUi(){
   const cur=priceMode(),manual=!!(PMODE&&PMODE.until>Date.now());
@@ -561,31 +599,51 @@ function pmUi(){
   $("pm-auto").hidden=!manual;
 }
 async function setPmode(mode){
-  const m=$("owner-msg");try{sessionStorage.setItem("pin",pin.value)}catch(e){}
   const val=mode?{mode,until:nextChange()}:null;
   try{
-    if(STATUS_API){const r=await fetch(STATUS_API+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,kind:"pmode",mode:val&&val.mode,until:val&&val.until})});if(!r.ok){m.textContent="PIN falsch.";return}}
-    else{if(pin.value!==DEMO_PIN){m.textContent="PIN falsch.";return}if(val)store.set("demoPmode",val);else store.del("demoPmode")}
-    await loadOverride();pmUi();m.textContent="Preise umgestellt.";
-  }catch(e){m.textContent="Fehler beim Speichern."}
+    if(STATUS_API){const r=await post("/status",{pin:OPIN,kind:"pmode",mode:val&&val.mode,until:val&&val.until});if(!r.ok){lost();return}}
+    else{if(val)store.set("demoPmode",val);else store.del("demoPmode")}
+    await loadOverride();pmUi();msg.textContent="Preise umgestellt.";
+  }catch(e){msg.textContent="Fehler beim Speichern."}
 }
 $("pm-switch").onclick=()=>setPmode(priceMode()==="d"?"e":"d");
 $("pm-auto").onclick=()=>setPmode(null);
-$("owner-close").onclick=()=>dlg.close();
 dlg.querySelectorAll("[data-set]").forEach(b=>b.onclick=async()=>{
-  const state=b.dataset.set;try{sessionStorage.setItem("pin",pin.value)}catch(e){}
+  const state=b.dataset.set;
   try{
-    if(STATUS_API){const r=await fetch(STATUS_API+"/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:pin.value,state})});if(!r.ok){msg.textContent="PIN falsch.";return}}
-    else{if(pin.value!==DEMO_PIN){msg.textContent="PIN falsch.";return}
-      if(state==="auto")store.del("demoStatus");else store.set("demoStatus",{state,set:Date.now(),expires:Date.now()+16*3600*1000})}
-    msg.textContent="Gespeichert.";await loadOverride();setTimeout(()=>dlg.close(),600);
+    if(STATUS_API){const r=await post("/status",{pin:OPIN,state});if(!r.ok){lost();return}}
+    else{if(state==="auto")store.del("demoStatus");else store.set("demoStatus",{state,set:Date.now(),expires:Date.now()+16*3600*1000})}
+    msg.textContent="Gespeichert.";await loadOverride();
   }catch(e){msg.textContent="Fehler beim Speichern."}
 });
+/* Bestellanfragen */
+const odlg=$("orders");
+async function loadOrders(){
+  const box=$("ord-list");$("ord-msg").textContent="";$("ord-clear").textContent="Alle löschen";
+  let list=[];
+  try{
+    if(STATUS_API){const r=await post("/orders/list",{pin:OPIN});if(!r.ok){odlg.close();lost();return}list=(await r.json()).orders||[]}
+    else list=store.get("demoOrders")||[];
+  }catch(e){box.innerHTML="";$("ord-msg").textContent="Konnte die Bestellanfragen nicht laden.";return}
+  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur(o.total)}</b><button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
+}
+async function delOrders(body){
+  try{
+    if(STATUS_API){const r=await post("/orders/delete",{pin:OPIN,...body});if(!r.ok){odlg.close();lost();return}}
+    else{const l=store.get("demoOrders")||[];store.set("demoOrders",body.all?[]:l.filter(o=>o.id!==body.id))}
+    await loadOrders();
+  }catch(e){$("ord-msg").textContent="Konnte nicht löschen."}
+}
+$("owner-orders").onclick=()=>{dlg.close();odlg.showModal();loadOrders()};
+$("ord-refresh").onclick=loadOrders;
+$("ord-close").onclick=()=>odlg.close();
+$("ord-list").addEventListener("click",e=>{const b=e.target.closest("[data-del]");if(b)delOrders({id:b.dataset.del})});
+$("ord-clear").onclick=()=>{const b=$("ord-clear");if(b.dataset.sure){b.dataset.sure="";delOrders({all:true})}else{b.dataset.sure="1";b.textContent="Wirklich alle löschen?"}};
 /* Preis-Editor */
 const pdlg=$("prices");
 function slots(){const r=[];ORDER.forEach(ck=>{const C=MENU[ck];C.items.forEach((it,i)=>it[2].forEach((_,si)=>r.push({k:`${ck}|${i}|${si}`,ck,label:it[0]+(C.sizes?" ("+C.sizes[si]+")":""),d:it[2][si],e:it[3][si]})))});return r}
 $("owner-prices").onclick=()=>{
-  $("pr-pin").value=pin.value;$("pr-msg").textContent="";
+  $("pr-msg").textContent="";
   let h=`<div class="pr-row pr-th"><span></span><span>Mo–Fr 07–14:30</span><span>Sonst</span></div>`,last="";
   slots().forEach(s=>{
     if(s.ck!==last){h+=`<div class="pr-h">${MENU[s.ck].title}</div>`;last=s.ck}
@@ -598,9 +656,8 @@ $("owner-prices").onclick=()=>{
 };
 $("pr-close").onclick=()=>pdlg.close();
 async function savePrices(prices){
-  const p=$("pr-pin").value;
-  if(STATUS_API){const r=await fetch(STATUS_API+"/prices",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin:p,prices})});if(!r.ok)throw new Error("pin")}
-  else{if(p!==DEMO_PIN)throw new Error("pin");if(prices&&Object.keys(prices).length)store.set("demoPrices",{prices});else store.del("demoPrices")}
+  if(STATUS_API){const r=await post("/prices",{pin:OPIN,prices});if(!r.ok)throw new Error("pin")}
+  else{if(prices&&Object.keys(prices).length)store.set("demoPrices",{prices});else store.del("demoPrices")}
 }
 $("pr-save").onclick=async()=>{
   const out={};
@@ -611,9 +668,9 @@ $("pr-save").onclick=async()=>{
   });
   Object.keys(ADDON).forEach(a=>{const i=$("pr-list").querySelector(`[data-k="addon|${a}|0"]`);if(i.value!==""&&+i.value!==ADDON[a].p)out[`addon|${a}|0`]={d:+i.value}});
   try{await savePrices(out);PR=out;renderMenu();persist();$("pr-msg").textContent="Gespeichert. Die neuen Preise gelten jetzt.";}
-  catch(e){$("pr-msg").textContent=e.message==="pin"?"PIN falsch.":"Fehler beim Speichern."}
+  catch(e){if(e.message==="pin"){pdlg.close();lost();dlg.showModal()}else $("pr-msg").textContent="Fehler beim Speichern."}
 };
-$("pr-reset").onclick=async()=>{try{await savePrices({});PR={};renderMenu();persist();$("pr-msg").textContent="Alle Preise sind wieder auf Standard.";$("owner-prices").click()}catch(e){$("pr-msg").textContent=e.message==="pin"?"PIN falsch.":"Fehler."}};
+$("pr-reset").onclick=async()=>{try{await savePrices({});PR={};renderMenu();persist();$("pr-msg").textContent="Alle Preise sind wieder auf Standard.";$("owner-prices").click()}catch(e){if(e.message==="pin"){pdlg.close();lost();dlg.showModal()}else $("pr-msg").textContent="Fehler."}};
 
 persist();
 let lastMode=priceMode();
