@@ -1,5 +1,5 @@
 # Kleiner lokaler Testserver: powershell -File serve.ps1  ->  http://localhost:8080
-$root = $PSScriptRoot
+$root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\public"))
 $l = New-Object System.Net.HttpListener
 $l.Prefixes.Add("http://localhost:8080/"); $l.Start()
 $types = @{".html"="text/html; charset=utf-8";".json"="application/json";".jpg"="image/jpeg";".png"="image/png";".css"="text/css";".js"="text/javascript"}

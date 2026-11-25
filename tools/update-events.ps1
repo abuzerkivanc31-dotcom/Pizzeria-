@@ -1,6 +1,6 @@
 # Liest den Veranstaltungskalender der YAYLA Arena und schreibt events.json.
-# Läuft automatisch per GitHub Actions (siehe .github/workflows/update-events.yml)
-# oder von Hand:  powershell -File update-events.ps1
+# Auf Netlify aktualisiert die Funktion netlify/functions/events-refresh.mjs die Termine automatisch.
+# Dieses Skript schreibt die Termine von Hand neu (public/events.js und events.json):  powershell -File tools\update-events.ps1
 
 $ErrorActionPreference = "Stop"
 $OffenVorBeginnStunden = 4   # der Laden öffnet so viele Stunden vor Veranstaltungsbeginn
@@ -33,7 +33,7 @@ for ($k = 0; $k -lt 7; $k++) {
 }
 $list = $events.Values | Sort-Object { $_.date }, { $_.start }
 $json = [ordered]@{ updated = (Get-Date).ToString("s"); events = @($list) } | ConvertTo-Json -Depth 5
-[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot "events.json"), $json, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot "..\public\events.json"), $json, (New-Object System.Text.UTF8Encoding($false)))
 # gleiche Daten als events.js, damit die Seite auch per Doppelklick (ohne Server) funktioniert
-[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot "events.js"), "window.EVENTS_DATA = $json;", (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText((Join-Path $PSScriptRoot "..\public\events.js"), "window.EVENTS_DATA = $json;", (New-Object System.Text.UTF8Encoding($false)))
 "$(@($list).Count) Events geschrieben."

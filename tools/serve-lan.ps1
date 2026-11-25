@@ -1,6 +1,6 @@
 # Testserver für das Handy im selben WLAN:  powershell -ExecutionPolicy Bypass -File serve-lan.ps1
 # Dann am Handy die ausgegebene Adresse (http://192.168.x.x:8090) öffnen.
-$root = $PSScriptRoot
+$root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\public"))
 $port = 8090
 $types = @{".html"="text/html; charset=utf-8";".json"="application/json";".jpg"="image/jpeg";".png"="image/png";".css"="text/css";".js"="text/javascript; charset=utf-8"}
 $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $port)
