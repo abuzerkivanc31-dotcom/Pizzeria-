@@ -189,8 +189,10 @@ async function stripePost(env, path, params) {
   });
   return { ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) };
 }
+// Schalter für die Online-Zahlung: auf true setzen, um sie wieder einzuschalten (zusammen mit der Seite, siehe Git-Verlauf)
+const PAY_ENABLED = false;
 async function handleCheckout(b, req, env) {
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) return json({ error: "nopay" }, 503);
+  if (!PAY_ENABLED || !env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) return json({ error: "nopay" }, 503);
   const kv = env.DATA;
   // Missbrauchsschutz: höchstens 8 Zahlungsversuche pro IP in 10 Minuten
   const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
@@ -370,7 +372,7 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-" });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
@@ -379,7 +381,7 @@ async function handleApi(req, env) {
     let b = {};
     try { b = await req.json(); } catch (e) {}
 
-    if (path === "/orders") return json({ error: "gone" }, 410); // Bestellung nur noch über Online-Zahlung
+    if (path === "/orders") return saveOrder(b, req, kv); // öffentlich (WhatsApp-Anfragen)
     if (path === "/route") return handleRoute(b, req, env); // öffentlich, begrenzt
     if (path === "/checkout") return handleCheckout(b, req, env); // öffentlich, begrenzt
 
