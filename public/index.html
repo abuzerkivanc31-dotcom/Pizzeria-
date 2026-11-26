@@ -288,6 +288,8 @@ dialog.full[open]{display:block}
   <input type="text" id="c-name" placeholder="Vor- und Nachname" autocomplete="name">
   <label class="l" id="c-phone-l" for="c-phone">Handynummer * (Pflicht bei Online- und Vor-Ort-Bestellung)</label>
   <input type="text" id="c-phone" placeholder="z. B. 0172 1234567" autocomplete="tel" inputmode="tel">
+  <label class="l" id="c-mail-l" for="c-mail" hidden>E-Mail-Adresse * (für die Info zur Lieferzeit)</label>
+  <input type="text" id="c-mail" inputmode="email" autocomplete="email" placeholder="name@beispiel.de" hidden>
   <div class="radio">
     <label><input type="radio" name="ctype" value="Abholung" checked><span>🏃 Abholung</span></label>
     <label><input type="radio" name="ctype" value="Lieferung"><span>🛵 Lieferung</span></label>
@@ -732,15 +734,15 @@ const _os=ownerShow;ownerShow=function(l){_os(l);$("owner-orders").hidden=ROLE!=
 </script>
 <script>
 (()=>{
-let CFG={route:false,pay:false};window.ROUTE=null;let rt=null,seq=0;
+let CFG={route:false,pay:false};window.ROUTE=null;window.TIPON=false;window.tipAmt=()=>{const R=window.ROUTE;return window.TIPON&&FULFIL==="Lieferung"&&R&&total()<R.min?Math.round((R.min-total())*100)/100:0};document.addEventListener("click",e=>{if(e.target.closest("#tip-btn")){window.TIPON=!window.TIPON;renderCart()}});let rt=null,seq=0;
 const addr=$("c-addr"),box=document.createElement("div");box.className="legal";box.id="f-route";box.hidden=true;$("c-addr-wrap").after(box);
 const rows=document.createElement("div");rows.id="cart-extra";$("cart-total").parentElement.after(rows);
 fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{if(c){CFG=c;upd()}}).catch(()=>{});
 function upd(){
 const lief=FULFIL==="Lieferung",R=window.ROUTE;
 box.hidden=!(lief&&CFG.route);$("f-deliv").hidden=!lief||(CFG.route&&!!R);
-if(lief&&CFG.route){box.innerHTML=R?`🛵 Fahrstrecke: <b>${String(R.km).replace(".",",")} km</b> · Liefergebühr: <b>${eur(R.fee)}</b> · Mindestbestellwert: <b>${R.min} €</b>`+(total()<R.min?`<br>⚠️ Dir fehlen noch <b>${eur(R.min-total())}</b> bis zum Mindestbestellwert.`:""):(box.dataset.state==="busy"?"Berechne Fahrstrecke …":(box.dataset.err||"Bitte gib deine vollständige Lieferadresse an. Die Lieferkosten werden nach der Fahrstrecke berechnet."))}
-rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div><div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee)}</span></div>`:"";
+if(lief&&CFG.route){box.innerHTML=R?`🛵 Fahrstrecke: <b>${String(R.km).replace(".",",")} km</b> · Liefergebühr: <b>${eur(R.fee)}</b> · Mindestbestellwert: <b>${R.min} €</b>`+(total()<R.min?`<br>⚠️ Dir fehlen noch <b>${eur(R.min-total())}</b> bis zum Mindestbestellwert.<br><button type="button" class="btn ghost" id="tip-btn" style="margin-top:8px;font-size:.85rem;padding:8px 14px">${window.TIPON?"✅ Fehlbetrag wird als Trinkgeld aufgefüllt (zum Ändern antippen)":"💶 Trotzdem bestellen: Fehlbetrag als Trinkgeld auffüllen"}</button>`:""):(box.dataset.state==="busy"?"Berechne Fahrstrecke …":(box.dataset.err||"Bitte gib deine vollständige Lieferadresse an. Die Lieferkosten werden nach der Fahrstrecke berechnet."))}
+rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div>${tipAmt()>0?`<div class="sum"><span>Trinkgeld (Auffüllung)</span><span>${eur(tipAmt())}</span></div>`:""}<div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee+tipAmt())}</span></div>`:"";
 }
 async function calc(){
 const a=addr.value.trim();window.ROUTE=null;box.dataset.err="";
@@ -771,9 +773,9 @@ upd();
 let PAY=false,INV=false,invOn=false,last="";
 const box=$("pay-box"),btn=$("cart-pay"),info=$("pay-info"),msg=$("cart-msg");
 fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{PAY=!!(c&&c.pay);INV=!!(c&&c.inv);updPay()}).catch(()=>{});
-const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0);
+const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0)+tipAmt();
 function updPay(){
-$("c-phone").hidden=$("c-phone-l").hidden=!PAY;box.hidden=!PAY||!CART.length;if(box.hidden)return;
+$("c-phone").hidden=$("c-phone-l").hidden=!PAY;$("c-mail").hidden=$("c-mail-l").hidden=!(PAY&&FULFIL==="Lieferung");box.hidden=!PAY||!CART.length;if(box.hidden)return;
 if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("inv-mail-wrap").hidden=!(INV&&invOn);$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?"✅ Rechnung angefordert (nur bei Online-Zahlung)":"🧾 Rechnung anfordern (nur bei Online-Zahlung)";
 const st=computeStatus(),ok=st.s==="open"||st.s==="event";
 btn.disabled=$("cart-cash").disabled=!ok;
@@ -788,17 +790,19 @@ const name=$("c-name").value.trim(),addr=$("c-addr").value.trim(),lief=FULFIL===
 if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
 if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
 const phone=$("c-phone").value.trim();if(phone.replace(/\D/g,"").length<8){msg.textContent="Bitte gib deine Handynummer an, damit wir dich bei Rückfragen erreichen.";$("c-phone").focus();return}
-const invMail=$("c-inv").value.trim();
+const mail=$("c-mail").value.trim();const okm=s=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
+if(lief&&!okm(mail)){msg.textContent="Bitte gib deine E-Mail-Adresse an, damit wir dir die voraussichtliche Lieferzeit schicken können.";$("c-mail").focus();return}
+const invMail=$("c-inv").value.trim()||mail;
 if(invOn&&mode==="vorort"){msg.textContent="Eine Rechnung gibt es nur bei Online-Zahlung. Wähle „online bezahlen“ oder schalte die Rechnung aus.";return}
 if(invOn&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(invMail)){msg.textContent="Bitte gib eine gültige E-Mail-Adresse für die Rechnung an.";$("c-inv").focus();return}
 if(lief){
 if(!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();return}
 if(!R||R.addr!==addr){msg.textContent="Bitte kurz warten, bis die Fahrstrecke für deine Adresse berechnet ist.";return}
-if(total()<R.min){msg.textContent="Der Mindestbestellwert für deine Lieferadresse beträgt "+R.min+" €. Dir fehlen noch "+eur(R.min-total())+".";return}
+if(total()<R.min&&!window.TIPON){msg.textContent="Der Mindestbestellwert für deine Lieferadresse beträgt "+R.min+" €. Dir fehlen noch "+eur(R.min-total())+". Du kannst den Fehlbetrag auch als Trinkgeld auffüllen.";return}
 }
 btn.disabled=$("cart-cash").disabled=true;msg.textContent=mode==="vorort"?"Einen Moment, deine Bestellung wird gesendet …":"Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
 try{
-const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,invoiceEmail:invOn&&mode==="online"?invMail:"",fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
+const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:lief?mail:"",tipFill:tipAmt()>0,invoiceEmail:invOn&&mode==="online"?invMail:"",fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.url){location.href=j.url;return}
 if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").textContent="Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.";$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
