@@ -220,7 +220,7 @@ dialog.full[open]{display:block}
 <section id="bewertungen" style="background:#131315"><div class="wrap">
   <h2>Das sagen unsere Gäste</h2>
   <div class="score" id="coolibri" style="display:none"><b></b><span style="color:var(--mute)"></span></div>
-<script>fetch("/api/rating",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{if(!d||!d.score||!d.count||!d.updated||Date.now()-d.updated>90*864e5)return;const e=document.getElementById("coolibri");e.querySelector("b").textContent=d.score;e.querySelector("span").textContent="von 10 bei Coolibri ("+d.count+" Bewertungen, Stand "+new Date(d.updated).toLocaleDateString("de-DE")+")";e.style.display=""}).catch(()=>{});</script>
+<script>fetch("/api/rating",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{if(!d||d.source!=="google"||!d.score||!d.count||!d.updated||Date.now()-d.updated>14*864e5)return;const e=document.getElementById("coolibri");e.querySelector("b").textContent=String(d.score).replace(".",",");const s=e.querySelector("span");const u=/^https:\/\//.test(d.url||"")?d.url:"https://www.google.com/maps";s.textContent="von 5 bei ";const a=document.createElement("a");a.href=u;a.target="_blank";a.rel="noopener";a.style.cssText="color:var(--gold);text-decoration:underline";a.textContent="Google";s.appendChild(a);s.appendChild(document.createTextNode(" ("+d.count+" Bewertungen)"));e.style.display=""}).catch(()=>{});</script>
   <div class="rev">
     <blockquote><div class="stars">★★★★★</div>„Der beste Baguetteladen. Nach der Schule meine Rettung. Service 1A, Hygiene 1A, Geschmack 1A.“<cite>Cansu Y. · Google</cite></blockquote>
     <blockquote><div class="stars">★★★★★</div>„Das Essen einfach nur geil und das Beste vor dem Spiel und nach dem Spiel.“<cite>Jan S. · Google</cite></blockquote>
@@ -329,7 +329,6 @@ dialog.full[open]{display:block}
       <button class="btn ghost" data-set="auto">↩️ Status wieder automatisch</button>
       <button class="btn ghost" id="owner-orders">📋 Bestellanfragen ansehen</button>
       <button class="btn ghost" id="owner-prices">💶 Preise anpassen</button>
-<button class="btn ghost" id="owner-rating">⭐ Bewertung (Coolibri) pflegen</button>
       <button class="btn ghost" id="owner-logout">Abmelden</button>
     </div>
   </div>
@@ -371,20 +370,6 @@ dialog.full[open]{display:block}
 <h3 id="paid-t"></h3>
 <p id="paid-p"></p>
 <div class="col"><button class="btn wa" id="paid-ok">Okay</button></div>
-</dialog>
-<dialog id="rating">
-<h3>⭐ Bewertung (Coolibri)</h3>
-<p>Trage hier den aktuellen Wert von Coolibri ein. Die Seite zeigt ihn mit dem heutigen Datum an. Nach 90 Tagen ohne Aktualisierung blendet sie die Bewertung automatisch aus.</p>
-<label for="rt-score">Bewertung von 10 (z. B. 8,9)</label>
-<input type="text" id="rt-score" inputmode="decimal" placeholder="8,9">
-<label for="rt-count">Anzahl der Bewertungen (z. B. 36)</label>
-<input type="number" id="rt-count" inputmode="numeric" min="1" placeholder="36">
-<div class="col" style="margin-top:14px">
-<button class="btn wa" id="rt-save">Speichern</button>
-<button class="btn ghost" id="rt-clear">Bewertung von der Seite entfernen</button>
-<button class="btn ghost" id="rt-close">Schließen</button>
-</div>
-<div class="msg" id="rt-msg"></div>
 </dialog>
 <script src="events.js"></script>
 <script>
@@ -723,15 +708,6 @@ setInterval(()=>{const m=priceMode();if(m!==lastMode){lastMode=m;renderMenu();re
   if(!j){try{j=await (await fetch("events.json",{cache:"no-store"})).json()}catch(e){}}
   EVENTS=(j&&j.events)||[];
   renderEvents();loadOverride();loadPrices();setInterval(loadOverride,60000);
-})();
-</script>
-<script>
-(()=>{const rd=document.getElementById("rating"),rs=document.getElementById("rt-score"),rc=document.getElementById("rt-count"),rm=document.getElementById("rt-msg");
-document.getElementById("owner-rating").onclick=async()=>{rm.textContent="";rs.value="";rc.value="";try{const d=await (await fetch("/api/rating",{cache:"no-store"})).json();rs.value=d.score||"";rc.value=d.count||"";rm.textContent=d.updated?"Zuletzt gespeichert: "+new Date(d.updated).toLocaleDateString("de-DE"):"Noch nichts gespeichert.";}catch(e){}dlg.close();rd.showModal()};
-document.getElementById("rt-close").onclick=()=>{rd.close();dlg.showModal()};
-const send=async body=>{try{const r=await fetch("/api/rating",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(Object.assign({pin:OPIN},body))});if(r.status===403){rd.close();lost();dlg.showModal();return null}return r}catch(e){return false}};
-document.getElementById("rt-save").onclick=async()=>{const s=rs.value.trim().replace(",","."),n=parseInt(rc.value,10);if(!(parseFloat(s)>=0&&parseFloat(s)<=10)||!(n>=1)){rm.textContent="Bitte eine Bewertung zwischen 0 und 10 und die Anzahl eintragen.";return}const r=await send({score:s,count:n});if(r===null)return;rm.textContent=r&&r.ok?"Gespeichert. Die Seite zeigt den neuen Wert sofort.":"Fehler beim Speichern."};
-document.getElementById("rt-clear").onclick=async()=>{const r=await send({clear:true});if(r===null)return;rm.textContent=r&&r.ok?"Die Bewertung wird nicht mehr angezeigt.":"Fehler.";if(r&&r.ok){rs.value="";rc.value=""}};
 })();
 </script>
 <style>#fbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}#fbar .btn{padding:8px 16px}.btn.on{background:var(--gold);border-color:var(--gold);color:#111}</style>
