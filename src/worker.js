@@ -190,9 +190,10 @@ async function stripePost(env, path, params) {
   return { ok: r.ok, status: r.status, j: await r.json().catch(() => ({})) };
 }
 // Schalter für die Online-Zahlung: auf true setzen, um sie wieder einzuschalten (zusammen mit der Seite, siehe Git-Verlauf)
-const PAY_ENABLED = false;
+const PAY_ENABLED = true;
 async function handleCheckout(b, req, env) {
-  if (!PAY_ENABLED || !env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) return json({ error: "nopay" }, 503);
+  const vorOrt = b.payMode === "vorort"; // Bestellung mit Bezahlung bei Abholung/Lieferung (bar oder Karte)
+  if (!PAY_ENABLED || (!vorOrt && (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET))) return json({ error: "nopay" }, 503);
   const kv = env.DATA;
   // Missbrauchsschutz: höchstens 8 Zahlungsversuche pro IP in 10 Minuten
   const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
@@ -239,6 +240,12 @@ async function handleCheckout(b, req, env) {
   const t0 = Date.now();
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
+  if (vorOrt) {
+    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, paid: false, pay: "vorort" };
+    await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
+    await notifyTelegram(env, rec);
+    return json({ ok: true });
+  }
   await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
@@ -300,7 +307,7 @@ async function notifyTelegram(env, rec) {
     const eurS = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
     const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0);
     const text = [
-      "🍕 Neue bezahlte Bestellung",
+      rec.paid ? "🍕 Neue bezahlte Bestellung" : "🍕 Neue Bestellung: Zahlung vor Ort (noch NICHT bezahlt)",
       "",
       "Name: " + rec.name,
       rec.type === "Lieferung" ? "Lieferung an: " + rec.addr + (rec.km ? " (" + rec.km + " km)" : "") : "Abholung",
@@ -310,7 +317,7 @@ async function notifyTelegram(env, rec) {
       ...(rec.lines || []),
       rec.note ? "\nAnmerkung: " + rec.note : "",
       "",
-      "Gesamt bezahlt: " + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
+      (rec.paid ? "Gesamt bezahlt: " : "Zu zahlen bei Abholung/Lieferung (bar oder Karte): ") + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
     ].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i > 0)).join("\n").slice(0, 4000);
     // Mehrere Empfänger: TELEGRAM_CHAT_ID darf eine Liste sein (Komma getrennt)
     const ids = String(chat).split(/[\s,;]+/).filter(Boolean);
