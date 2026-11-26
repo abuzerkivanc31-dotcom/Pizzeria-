@@ -13,6 +13,6 @@ run_worker_first = ["/api/*"]
 binding = "DATA"
 id = "b1e5fecb198e4efca05c850caed83606"
 
-# Alle 6 Stunden Eventtage der YAYLA Arena aktualisieren
+# Alle 6 Stunden Eventtage der YAYLA Arena aktualisieren; alle 2 Minuten die Rückfrage "noch geöffnet?" bei Veranstaltungen
 [triggers]
-crons = ["0 */6 * * *"]
+crons = ["0 */6 * * *", "*/2 * * * *"]
