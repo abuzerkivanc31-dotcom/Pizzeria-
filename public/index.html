@@ -170,9 +170,9 @@ dialog.full[open]{display:block}
 </div></nav>
 
 <div class="orderstrip"><div class="wrap">
-  <div class="os-title"><b>Jetzt bestellen</b><span>Direkt bei uns per WhatsApp bestellen</span></div>
+  <div class="os-title"><b>Jetzt bestellen</b><span>Direkt bei uns bestellen: online bezahlen oder vor Ort zahlen</span></div>
   <div class="os-btns">
-    <button class="btn wa open-menu">💬 Direkt bestellen (WhatsApp)</button>
+    <button class="btn primary open-menu">🛒 Online bestellen</button>
   </div>
 </div></div>
 
@@ -188,7 +188,7 @@ dialog.full[open]{display:block}
 </div></header>
 
 <section id="karte" class="ctasec"><div class="wrap"><div class="ctabox">
-  <div><h2>Speisekarte & Bestellung</h2><p>Pizza, Baguette, Pommes, Salate. Alle Speisen sind halal. Aussuchen und per WhatsApp bestellen.</p></div>
+  <div><h2>Speisekarte & Bestellung</h2><p>Pizza, Baguette, Pommes, Salate. Alle Speisen sind halal. Aussuchen, online bezahlen oder vor Ort zahlen.</p></div>
   <button class="btn primary big open-menu">🍕 Speisekarte öffnen & bestellen</button>
 </div></div></section>
 
@@ -234,10 +234,10 @@ dialog.full[open]{display:block}
 <section id="bestellen"><div class="wrap">
   <div class="order">
     <h2>Hunger? Bestell direkt.</h2>
-    <p class="sub" style="margin:0 auto">Per Telefon oder WhatsApp.</p>
+    <p class="sub" style="margin:0 auto">Online bestellen und bezahlen, per Telefon oder WhatsApp.</p>
     <div class="cta">
       <a class="btn ghost" href="tel:+4921514546528">Telefonisch bestellen</a>
-      <button class="btn wa open-menu">💬 Direkt bei uns bestellen</button>
+      <button class="btn primary open-menu">🛒 Online bestellen</button>
     </div>
   </div>
 </div></section>
@@ -259,7 +259,7 @@ dialog.full[open]{display:block}
   <div class="mh"><b>🍕 Speisekarte & Bestellung</b><button class="x" id="menu-close">✕ Schließen</button></div>
   <div class="mnav" id="mnav"></div>
   <div class="mbody">
-    <div class="howto"><b>So bestellst du:</b> Gerichte antippen, bei Bedarf Soßen und Extras wählen, unten den Warenkorb öffnen und die Bestellung per WhatsApp an uns schicken. Die Bestellung ist <b>nicht verbindlich</b>: Sie gilt erst, wenn wir sie in WhatsApp bestätigt haben. Alle unsere Produkte sind halal.</div>
+    <div class="howto"><b>So bestellst du:</b> Bestellart wählen, Gerichte antippen, bei Bedarf Soßen und Extras wählen, unten den Warenkorb öffnen. Du kannst online bezahlen (Apple Pay, Karte u. a.) oder bei Abholung bzw. Lieferung bar oder mit Karte zahlen. Alternativ kannst du per WhatsApp anfragen (dann gilt die Bestellung erst nach unserer Bestätigung). Alle unsere Produkte sind halal.</div>
     <div id="menu"></div>
   </div>
   <div class="mbar" id="mbar"><button class="cartbtn"></button></div>
@@ -286,7 +286,7 @@ dialog.full[open]{display:block}
   <div class="sum"><span>Summe</span><span id="cart-total"></span></div>
   <label class="l" for="c-name">Dein Name *</label>
   <input type="text" id="c-name" placeholder="Vor- und Nachname" autocomplete="name">
-  <label class="l" id="c-phone-l" for="c-phone">Handynummer * (für Rückfragen zu deiner Bestellung)</label>
+  <label class="l" id="c-phone-l" for="c-phone">Handynummer * (Pflicht bei Online- und Vor-Ort-Bestellung)</label>
   <input type="text" id="c-phone" placeholder="z. B. 0172 1234567" autocomplete="tel" inputmode="tel">
   <div class="radio">
     <label><input type="radio" name="ctype" value="Abholung" checked><span>🏃 Abholung</span></label>
@@ -298,9 +298,9 @@ dialog.full[open]{display:block}
   <input type="text" id="c-time" placeholder="z. B. 12:30 Uhr oder „so schnell wie möglich“">
   <label class="l" for="c-note">Allgemeine Anmerkung (optional)</label>
   <textarea id="c-note" placeholder="z. B. Allergien, Wechselgeld …"></textarea>
-  <div class="legal">⚠️ <b>So geht es weiter:</b> Du wirst direkt zu WhatsApp weitergeleitet. Deine Nachricht ist dort schon vorbereitet, du musst sie nur noch abschicken. <b>Verbindlich ist die Bestellung erst, wenn wir sie dir in WhatsApp bestätigt haben</b> (gilt für Abholung und Lieferung). Alle Preise sind Endpreise inkl. 7 % MwSt. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 2 BGB). Zur Übersicht für den Laden wird deine Anfrage zusätzlich 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>).</div>
+  <div class="legal">Alle Preise sind Endpreise inkl. 7 % MwSt. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 2 BGB). Deine Bestellung wird zur Bearbeitung 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>). Über „Weiter zu WhatsApp“ schickst du nur eine unverbindliche Anfrage, die erst gilt, wenn wir sie dir in WhatsApp bestätigt haben.</div>
   <div class="col">
-    <div id="pay-box" hidden><div class="legal" id="pay-info"></div><button class="btn primary" id="cart-pay" type="button">💳 Zahlungspflichtig bestellen</button></div>
+    <div id="pay-box" hidden><div class="legal" id="pay-info"></div><button class="btn primary" id="cart-pay" type="button">💳 Zahlungspflichtig bestellen (online bezahlen)</button><button class="btn primary" id="cart-cash" type="button" style="display:flex;margin-top:10px">💶 Zahlungspflichtig bestellen (Bezahlung vor Ort, bar oder Karte)</button></div>
     <button class="btn wa" id="cart-send">💬 Weiter zu WhatsApp</button>
     <button class="btn ghost" id="cart-clear">Warenkorb leeren</button>
     <button class="btn ghost" id="cart-close">Weiter auswählen</button>
@@ -338,7 +338,7 @@ dialog.full[open]{display:block}
 
 <dialog id="orders">
   <h3>📋 Bestellanfragen</h3>
-  <p>Anfragen, die Kunden über die Website per WhatsApp gesendet haben. Sie werden nach 30 Tagen automatisch gelöscht. Verbindlich ist eine Bestellung erst, wenn du sie in WhatsApp bestätigt hast.</p>
+  <p>Bestellungen und Anfragen von der Website. Online bezahlte Bestellungen sind verbindlich, bei „Zahlung vor Ort“ kassierst du bei Abholung oder Lieferung. WhatsApp-Anfragen sind erst nach deiner Bestätigung verbindlich. Alles wird nach 30 Tagen automatisch gelöscht.</p>
   <div id="ord-list"></div>
   <div class="col" style="margin-top:14px">
     <button class="btn ghost" id="ord-refresh">Aktualisieren</button>
@@ -663,7 +663,7 @@ async function loadOrders(){
     if(STATUS_API){const r=await post("/orders/list",{pin:OPIN});if(!r.ok){odlg.close();lost();return}list=(await r.json()).orders||[]}
     else list=store.get("demoOrders")||[];
   }catch(e){box.innerHTML="";$("ord-msg").textContent="Konnte die Bestellanfragen nicht laden.";return}
-  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}${o.phone?" · Tel: "+esc(o.phone):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur((o.total||0)+(o.fee||0))}</b>${o.fee?`<span>inkl. ${eur(o.fee)} Liefergebühr</span>`:""}${o.paid?`<span>✅ online bezahlt</span>`:""}<button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
+  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}${o.phone?" · Tel: "+esc(o.phone):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur((o.total||0)+(o.fee||0))}</b>${o.fee?`<span>inkl. ${eur(o.fee)} Liefergebühr</span>`:""}${o.paid?`<span>✅ online bezahlt</span>`:(o.pay==="vorort"?`<span>💶 Zahlung vor Ort</span>`:"")}<button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
 }
 async function delOrders(body){
   try{
@@ -798,13 +798,13 @@ const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0);
 function updPay(){
 $("c-phone").hidden=$("c-phone-l").hidden=!PAY;box.hidden=!PAY||!CART.length;if(box.hidden)return;
 const st=computeStatus(),ok=st.s==="open"||st.s==="event";
-btn.disabled=!ok;
-const h=ok?`<b>Online bezahlen (Apple Pay, Karte u. a.):</b> Gesamtpreis inkl. 7 % MwSt.: <b>${eur(grand())}</b>${FULFIL==="Lieferung"&&window.ROUTE?` (inkl. ${eur(window.ROUTE.fee)} Liefergebühr)`:""}. Mit Klick auf „Zahlungspflichtig bestellen“ gibst du eine verbindliche Bestellung ab und wirst zu Stripe weitergeleitet. Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht. Kann deine Bestellung nicht ausgeführt werden, erstatten wir dir den Betrag.`:`Online-Zahlung ist nur während der Öffnungszeiten möglich. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;
+btn.disabled=$("cart-cash").disabled=!ok;
+const h=ok?`<b>Online bezahlen (Apple Pay, Karte u. a.):</b> Gesamtpreis inkl. 7 % MwSt.: <b>${eur(grand())}</b>${FULFIL==="Lieferung"&&window.ROUTE?` (inkl. ${eur(window.ROUTE.fee)} Liefergebühr)`:""}. Mit Klick auf „Zahlungspflichtig bestellen“ gibst du eine verbindliche Bestellung ab und wirst zu Stripe weitergeleitet. Alternativ kannst du bei Abholung oder Lieferung bar oder mit Karte bezahlen (zweiter Knopf). Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht. Kann deine Bestellung nicht ausgeführt werden, erstatten wir dir den Betrag.`:`Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;
 if(h!==last){info.innerHTML=h;last=h}
 }
 const _rc=renderCart;renderCart=function(){_rc();updPay()};
 setInterval(()=>{if($("cart").open)updPay()},500);
-btn.onclick=async()=>{
+const go=async(mode)=>{
 const name=$("c-name").value.trim(),addr=$("c-addr").value.trim(),lief=FULFIL==="Lieferung",R=window.ROUTE;
 if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
 if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
@@ -814,15 +814,17 @@ if(!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();
 if(!R||R.addr!==addr){msg.textContent="Bitte kurz warten, bis die Fahrstrecke für deine Adresse berechnet ist.";return}
 if(total()<R.min){msg.textContent="Der Mindestbestellwert für deine Lieferadresse beträgt "+R.min+" €. Dir fehlen noch "+eur(R.min-total())+".";return}
 }
-btn.disabled=true;msg.textContent="Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
+btn.disabled=$("cart-cash").disabled=true;msg.textContent=mode==="vorort"?"Einen Moment, deine Bestellung wird gesendet …":"Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
 try{
-const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
+const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.url){location.href=j.url;return}
-msg.textContent=({closed:"Wir haben gerade geschlossen. Online-Zahlung ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
+if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").textContent="Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.";$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
+msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
 }catch(e){msg.textContent="Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an."}
 btn.disabled=false;updPay();
 };
+btn.onclick=()=>go("online");$("cart-cash").onclick=()=>go("vorort");
 const q=new URLSearchParams(location.search).get("bezahlt");
 if(q!==null){
 history.replaceState(null,"",location.pathname);
