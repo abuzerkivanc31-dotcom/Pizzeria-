@@ -47,6 +47,27 @@ async function routeKm(env, addr) {
   if (!j.routes || !j.routes[0]) return { error: "addr" };
   return { km: (j.routes[0].distanceMeters || 0) / 1000, sec: parseInt(String(j.routes[0].duration || "0"), 10) || 0 };
 }
+// Prüft, ob eine Adresse wirklich existiert (Google Places): Straße mit Hausnummer und PLZ müssen gefunden werden.
+async function checkAddr(env, addr) {
+  const a = String(addr || "").trim();
+  const plz = (a.match(/\b(\d{5})\b/) || [])[1] || "";
+  const num = (a.match(/(\d+\s*[a-zA-Z]?)\s*,/) || [])[1] || "";
+  if (!plz || !num || !env.GOOGLE_MAPS_KEY) return { error: "addr" };
+  const key = "av:" + (await shortHash(a.toLowerCase()));
+  if ((await env.DATA.get(key)) === "ok") return { ok: true };
+  const r = await fetch("https://places.googleapis.com/v1/places:searchText", { method: "POST", headers: { "content-type": "application/json", "X-Goog-Api-Key": env.GOOGLE_MAPS_KEY, "X-Goog-FieldMask": "places.addressComponents,places.formattedAddress" }, body: JSON.stringify({ textQuery: a, languageCode: "de", regionCode: "DE" }) });
+  if (!r.ok) return { error: "upstream" };
+  const j = await r.json().catch(() => ({}));
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, "");
+  const p = (j.places || []).find((x) => {
+    const c = x.addressComponents || [];
+    const get = (t) => (c.find((k) => (k.types || []).includes(t)) || {}).longText || "";
+    return get("postal_code") === plz && norm(get("street_number")) === norm(num) && !!get("route");
+  });
+  if (!p) return { error: "addr" };
+  await env.DATA.put(key, "ok", { expirationTtl: 30 * 86400 });
+  return { ok: true, formatted: p.formattedAddress || a };
+}
 async function handleRoute(b, req, env) {
   if (!env.GOOGLE_MAPS_KEY) return json({ error: "nokey" }, 503);
   let addr = str(b.addr, 200);
@@ -58,6 +79,8 @@ async function handleRoute(b, req, env) {
   const count = Number((await env.DATA.get(rlKey)) || 0);
   if (count >= 15) return json({ error: "limit" }, 429);
   await env.DATA.put(rlKey, String(count + 1), { expirationTtl: 1200 });
+  const v = await checkAddr(env, addr);
+  if (v.error) return json({ error: v.error }, v.error === "addr" ? 422 : 502);
   const r = await routeKm(env, addr);
   if (r.error) return json({ error: r.error }, r.error === "addr" ? 422 : 502);
   return json({ km: Math.round(r.km * 10) / 10, ...tierFor(r.km) });
@@ -154,18 +177,26 @@ function priceCart(menu, PR, mode, cart) {
     if (tops.length > 14 || sauces.length > 12) return { error: "cart" };
     if (tops.length && !o.tops) return { error: "cart" };
     if (sauces.length && o.sauce === undefined) return { error: "cart" };
+    const ing = [];
     for (const n of tops) {
       const T = menu.TOPS.find((x) => x[0] === n);
       if (!T) return { error: "cart" };
-      unit += addon(T[1]);
+      ing.push(addon(T[1]));
     }
     const okS = Array.isArray(o.sauces) ? o.sauces : menu.SAUCES;
     for (const n of sauces) if (!okS.includes(n)) return { error: "cart" };
     unit += Math.max(0, sauces.length - (o.sauce || 0)) * addon("sauce");
     if (sel.bake) {
       if (!o.bake) return { error: "cart" };
-      unit += addon("bake");
+      ing.push(addon("bake"));
     }
+    // z. B. König-Baguette: "incl" Zutaten inklusive (Überbacken zählt mit), ab der nächsten wird jeweils die teuerste berechnet
+    if (o.incl) {
+      if (ing.length < o.incl) return { error: "cart" };
+      ing.sort((a, b) => b - a);
+      unit += ing.slice(0, Math.max(0, ing.length - o.incl)).reduce((a, b) => a + b, 0);
+    } else unit += ing.reduce((a, b) => a + b, 0);
+    if (sel.noSauce === true && (sauces.length || o.sauce === undefined)) return { error: "cart" };
     const pick = o.pick ? (o.pick.options.includes(sel.pick) ? sel.pick : o.pick.options[0]) : "";
     unit = Math.round(unit * 100) / 100;
     const pre = C.prefix || "";
@@ -175,7 +206,8 @@ function priceCart(menu, PR, mode, cart) {
     if (o.pick && pick) det.push(`${o.pick.label}: ${pick}`);
     if (o.fixed) det.push("Inklusive: " + o.fixed.join(", "));
     if (sauces.length) det.push("Soßen: " + sauces.join(", "));
-    if (tops.length) det.push("Extra: " + tops.join(", "));
+    if (sel.noSauce === true) det.push("Keine Soße");
+    if (tops.length) det.push((o.incl ? "Zutaten: " : "Extra: ") + tops.join(", "));
     if (sel.bake) det.push("Überbacken");
     out.push({ name, det, note: str(l.note, 200), qty, unit, cat: c, desc: String(it[1] || "") });
   }
@@ -219,6 +251,8 @@ async function handleCheckout(b, req, env) {
   if (lief && !mail) return json({ error: "email" }, 400);
   const addr = lief ? str(b.addr, 200) : "";
   if (lief && addr.length < 6) return json({ error: "addr" }, 400);
+  const billAddr = !lief && invEmail ? str(b.billAddr, 200) : "";
+  if (!lief && invEmail) { const v0 = await checkAddr(env, billAddr); if (v0.error) return json({ error: "billaddr" }, 422); }
   // Preise serverseitig nachrechnen
   const menu = await (await env.ASSETS.fetch(new URL("/menu.json", req.url))).json();
   const PRd = await getJSON(kv, "prices");
@@ -232,6 +266,8 @@ async function handleCheckout(b, req, env) {
     if (!env.GOOGLE_MAPS_KEY) return json({ error: "route" }, 503);
     let a = addr;
     if (!/\d{5}/.test(a) && !a.includes(",")) a += ", Krefeld";
+    const v = await checkAddr(env, a);
+    if (v.error) return json({ error: v.error === "addr" ? "addr" : "route" }, v.error === "addr" ? 422 : 502);
     const r = await routeKm(env, a);
     if (r.error) return json({ error: r.error === "addr" ? "addr" : "route" }, r.error === "addr" ? 422 : 502);
     const t = tierFor(r.km);
@@ -251,13 +287,14 @@ async function handleCheckout(b, req, env) {
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
   if (vorOrt) {
-    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, phone, paid: false, pay: "vorort" };
+    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
     await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
+    await addLedger(env, rec);
     await notifyTelegram(env, rec);
     await sendEta(env, rec);
     return json({ ok: true });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -376,6 +413,7 @@ async function handleStripeWebhook(req, env) {
     }
     if (id && s.payment_status === "paid") {
       await sendInvoice(env, await getJSON(kv, "o:" + id));
+      await addLedger(env, await getJSON(kv, "o:" + id));
       await sendEta(env, await getJSON(kv, "o:" + id));
     }
   }
@@ -661,16 +699,17 @@ function pdfEsc(s) {
   }
   return o;
 }
-function pdfBuild(pages) {
+function pdfBuild(pages, logo) {
   const objs = [];
   objs.push("<< /Type /Catalog /Pages 2 0 R >>");
   objs.push("<< /Type /Pages /Kids [" + pages.map((_, i) => (5 + i * 2) + " 0 R").join(" ") + "] /Count " + pages.length + " >>");
   objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
   objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
   pages.forEach((c, i) => {
-    objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents " + (6 + i * 2) + " 0 R >>");
+    objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (logo ? " /XObject << /Im1 " + (5 + pages.length * 2) + " 0 R >>" : "") + " >> /Contents " + (6 + i * 2) + " 0 R >>");
     objs.push("<< /Length " + c.length + " >>\nstream\n" + c + "\nendstream");
   });
+  if (logo) objs.push("<< /Type /XObject /Subtype /Image /Width " + logo.w + " /Height " + logo.h + " /ColorSpace /" + logo.cs + " /BitsPerComponent 8 /Filter /DCTDecode /Length " + logo.bin.length + " >>\nstream\n" + logo.bin + "\nendstream");
   let out = "%PDF-1.4\n";
   const offs = [];
   objs.forEach((o, i) => { offs.push(out.length); out += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
@@ -682,7 +721,7 @@ function pdfBuild(pages) {
   return bytes;
 }
 const invRate = (x) => (x.cat === "getraenke" && !/milch/i.test(x.name || "") ? 19 : 7);
-function buildInvoicePdf(rec) {
+function buildInvoicePdf(rec, logo) {
   const money = (cents) => (cents / 100).toFixed(2).replace(".", ",") + " €";
   const dfmt = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(ts));
   const tfmt = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ts));
@@ -715,19 +754,22 @@ function buildInvoicePdf(rec) {
     gross[7] += a7; gross[19] += a19;
   };
   addExtra("Liefergebühr" + (rec.km ? " (" + String(rec.km).replace(".", ",") + " km)" : ""), Math.round((rec.fee || 0) * 100));
-  addExtra("Trinkgeld (Aufrundung)", Math.round((rec.tip || 0) * 100));
-  const totalC = gross[7] + gross[19];
+  const tipC = Math.round((rec.tip || 0) * 100);
+  if (tipC > 0) { if (TIP_TAXFREE) rows.push({ name: "Trinkgeld (Aufrundung)", det: ["ohne MwSt."], qty: 1, unitC: tipC, totC: tipC, rate: 0 }); else addExtra("Trinkgeld (Aufrundung)", tipC); }
+  const totalC = gross[7] + gross[19] + (TIP_TAXFREE ? tipC : 0);
   const header = (first) => {
     c = [];
     if (first) {
-      T(SELLER.name, L, 790, 13, true);
-      [SELLER.owner, SELLER.street + ", " + SELLER.city, SELLER.phone, "E-Mail: " + SELLER.mail].forEach((s, i) => T(s, L, 775 - i * 12.5, 9, false, true));
+      const sl = [SELLER.owner, SELLER.street + ", " + SELLER.city, SELLER.phone, "E-Mail: " + SELLER.mail];
+      if (logo) { const lh = 44, lw = (logo.w / logo.h) * lh; c.push("q " + lw.toFixed(2) + " 0 0 " + lh + " " + L + " 768 cm /Im1 Do Q"); sl.forEach((s, i) => T(s, L, 755 - i * 11.5, 8.5, false, true)); }
+      else { T(SELLER.name, L, 790, 13, true); sl.forEach((s, i) => T(s, L, 775 - i * 12.5, 9, false, true)); }
       T("RECHNUNG", R, 790, 22, true, false, true);
       [["Rechnungsnummer", no], ["Rechnungsdatum", dfmt(inDate)], ["Leistungsdatum", dfmt(inDate)], ["Bestellt am", tfmt(rec.t)]].forEach((p, i) => { T(p[0], 400, 764 - i * 14, 9, false, true); T(p[1], R, 764 - i * 14, 10, true, false, true); });
       T(SELLER.name + " · " + SELLER.street + " · " + SELLER.city, L, 696, 7, false, true);
       let yy = 681;
       T(rec.name || "Kunde", L, yy, 11, true);
-      if (rec.type === "Lieferung" && rec.addr) wrap(rec.addr, false, 10, 250).slice(0, 3).forEach((s) => { yy -= 13; T(s, L, yy, 10); });
+      const cAddr = rec.type === "Lieferung" ? rec.addr : rec.billAddr || "";
+      if (cAddr) cAddr.split(/\s*,\s*/).filter(Boolean).slice(0, 3).forEach((s) => { yy -= 13; T(s, L, yy, 10); });
       if (rec.invEmail) { yy -= 13; T(rec.invEmail, L, yy, 10); }
       T("Rechnung " + no, L, 610, 13, true);
       T("Vielen Dank für deine Bestellung. Wir berechnen dir folgende Leistungen:", L, 593, 10);
@@ -750,7 +792,7 @@ function buildInvoicePdf(rec) {
     T(String(i + 1), L + 4, y, 9.5);
     nameL.forEach((s, k) => T(s, L + 34, y - k * 12, 9.5));
     detL.forEach((s, k) => T(s, L + 40, y - nameL.length * 12 - k * 10 + 2, 8, false, true));
-    T(String(r.qty), 335, y, 9.5, false, false, true); T(money(r.unitC), 405, y, 9.5, false, false, true); T(r.rate + " %", 452, y, 9.5, false, false, true); T(money(r.totC), R - 4, y, 9.5, false, false, true);
+    T(String(r.qty), 335, y, 9.5, false, false, true); T(money(r.unitC), 405, y, 9.5, false, false, true); T(r.rate ? r.rate + " %" : "frei", 452, y, 9.5, false, false, true); T(money(r.totC), R - 4, y, 9.5, false, false, true);
     y -= h;
     Ln(L, y + 10, R, y + 10, 0.3);
   });
@@ -762,6 +804,7 @@ function buildInvoicePdf(rec) {
     T("Nettobetrag " + rt + " %", 400, y, 9.5, false, false, true); T(money(net), R - 4, y, 9.5, false, false, true); y -= 13;
     T("enthaltene MwSt. " + rt + " %", 400, y, 9.5, false, false, true); T(money(vat), R - 4, y, 9.5, false, false, true); y -= 15;
   });
+  if (TIP_TAXFREE && tipC > 0) { T("Trinkgeld (ohne MwSt.)", 400, y, 9.5, false, false, true); T(money(tipC), R - 4, y, 9.5, false, false, true); y -= 15; }
   Ln(330, y + 6, R, y + 6, 0.8);
   y -= 8;
   T("Gesamtbetrag (brutto)", 400, y, 11, true, false, true); T(money(totalC), R - 4, y, 11, true, false, true); y -= 18;
@@ -775,7 +818,7 @@ function buildInvoicePdf(rec) {
     T(SELLER.street + ", " + SELLER.city + " · " + SELLER.phone + " · " + SELLER.mail + " · " + SELLER.tax, L, 40, 7.5, false, true, false, arr);
     T("Seite " + (i + 1) + " von " + pages.length, R, 50, 7.5, false, true, true, arr);
   });
-  return pdfBuild(pages.map((a) => a.join("\n")));
+  return pdfBuild(pages.map((a) => a.join("\n")), logo);
 }
 function b64(bytes) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
 async function sendMail(env, to, subject, text, filename, pdf) {
@@ -826,7 +869,7 @@ async function sendInvoice(env, rec) {
       rec.invDate = rec.paidAt || Date.now();
       await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
     }
-    const pdf = buildInvoicePdf(rec), fn = "Rechnung-" + rec.invNo + ".pdf";
+    const pdf = buildInvoicePdf(rec, await loadLogo(env)), fn = "Rechnung-" + rec.invNo + ".pdf";
     const total = ((typeof rec.amount === "number" ? rec.amount : Math.round(((rec.total || 0) + (rec.fee || 0)) * 100)) / 100).toFixed(2).replace(".", ",") + " €";
     if (!rec.invBiz) {
       const body = "Neue bezahlte Online-Bestellung. Die Rechnung " + rec.invNo + " liegt als PDF an.\n\nKunde: " + rec.name + (rec.phone ? "\nTelefon: " + rec.phone : "") + "\nArt: " + rec.type + (rec.addr ? " (" + rec.addr + ")" : "") + "\nBetrag: " + total + "\nRechnung an Kunde: " + (rec.invEmail ? "ja, an " + rec.invEmail : "nein, nicht angefordert") + "\n\nBitte diese E-Mail als Buchhaltungsbeleg aufbewahren.";
@@ -840,6 +883,104 @@ async function sendInvoice(env, rec) {
     await kv.put("invstatus", rec.invBiz && (!rec.invEmail || rec.invCust) ? "ok" : "fehler");
   } catch (e) {
     try { await kv.put("invstatus", "ausnahme"); } catch (e2) {}
+  }
+}
+
+// ---------- Logo für die Rechnung (public/logo-rechnung.jpg) ----------
+async function loadLogo(env) {
+  try {
+    const r = await env.ASSETS.fetch(new URL("/logo-rechnung.jpg", "https://pizzeria-koenigspalast.de"));
+    if (!r.ok) return null;
+    const u = new Uint8Array(await r.arrayBuffer());
+    let i = 2;
+    while (i + 9 < u.length) {
+      if (u[i] !== 0xff) return null;
+      const m = u[i + 1], len = (u[i + 2] << 8) | u[i + 3];
+      if (m >= 0xc0 && m <= 0xc2) {
+        const h = (u[i + 5] << 8) | u[i + 6], w = (u[i + 7] << 8) | u[i + 8], comps = u[i + 9];
+        let bin = "";
+        for (let k = 0; k < u.length; k += 0x8000) bin += String.fromCharCode.apply(null, u.subarray(k, k + 0x8000));
+        return { w, h, cs: comps === 1 ? "DeviceGray" : comps === 4 ? "DeviceCMYK" : "DeviceRGB", bin };
+      }
+      i += 2 + len;
+    }
+  } catch (e) {}
+  return null;
+}
+// ---------- Umsatz-Buch (pro Bestellung) und Monatsabrechnung per E-Mail ----------
+const TIP_TAXFREE = true; // Trinkgeld aus der Aufrundung ohne MwSt. (Vorgabe Inhaber, vom Steuerberater prüfen lassen)
+const ymOf = (ts) => berlinDate(ts).slice(0, 7);
+function vatSplit(e) {
+  const g = { 7: 0, 19: 0 };
+  for (const x of e.items || []) g[invRate(x)] += Math.round(x.unit * 100) * x.qty;
+  const b7 = g[7], b19 = g[19], all = b7 + b19 || 1;
+  const feeC = Math.round((e.fee || 0) * 100), tipC = Math.round((e.tip || 0) * 100);
+  const f7 = Math.round((feeC * b7) / all);
+  g[7] += f7; g[19] += feeC - f7;
+  let tip = 0;
+  if (TIP_TAXFREE) tip = tipC;
+  else { const t7 = Math.round((tipC * b7) / all); g[7] += t7; g[19] += tipC - t7; }
+  const n7 = Math.round(g[7] / 1.07), n19 = Math.round(g[19] / 1.19);
+  return { g7: g[7], n7, v7: g[7] - n7, g19: g[19], n19, v19: g[19] - n19, tip, fee: feeC, total: g[7] + g[19] + tip };
+}
+async function addLedger(env, rec) {
+  try {
+    if (!rec || !rec.id || (!rec.paid && rec.pay !== "vorort")) return;
+    const ts = rec.paid ? rec.paidAt || rec.t : rec.t;
+    const e = { id: rec.id, t: ts, pay: rec.paid ? "online" : "vorort", type: rec.type, invNo: rec.invNo || "", items: (rec.items || []).map((x) => ({ name: x.name, qty: x.qty, unit: x.unit, cat: x.cat })), fee: rec.fee || 0, tip: rec.tip || 0 };
+    await setJSON(env.DATA, "led:" + ymOf(ts) + ":" + rec.id, e, { expirationTtl: 400 * 86400 });
+  } catch (e) {
+    console.log("Ledger-Fehler", String(e));
+  }
+}
+// Am 1. jedes Monats: Aufstellung des Vormonats an die Geschäftsmail (Zusammenfassung + 2 CSV-Dateien für Excel)
+async function monthlyReport(env, forceMonth) {
+  const kv = env.DATA;
+  try {
+    if (!env.RESEND_API_KEY) return;
+    const now = Date.now(), today = berlinDate(now);
+    let ym = forceMonth;
+    if (!ym) {
+      if (today.slice(8, 10) !== "01") return;
+      ym = berlinDate(berlinEpoch(today.slice(0, 8) + "01", "00:00") - 3600000).slice(0, 7);
+      if (await kv.get("rep:" + ym)) return;
+    }
+    const list = [];
+    let cursor;
+    do {
+      const r = await kv.list({ prefix: "led:" + ym + ":", cursor, limit: 1000 });
+      for (const k of r.keys) { const e = await getJSON(kv, k.name); if (e) list.push(e); }
+      cursor = r.list_complete ? null : r.cursor;
+    } while (cursor);
+    list.sort((a, b) => a.t - b.t);
+    const eu = (c) => (c / 100).toFixed(2).replace(".", ",");
+    const dt = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(ts));
+    const tm = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" }).format(new Date(ts));
+    const Z = () => ({ n: 0, g7: 0, n7: 0, v7: 0, g19: 0, n19: 0, v19: 0, tip: 0, fee: 0, total: 0 });
+    const S = { online: Z(), vorort: Z() }, T = Z(), art = {};
+    const rows = ["Datum;Uhrzeit;Bestellnr.;Rechnungsnr.;Zahlart;Art;Brutto gesamt;darin Liefergebühr;Trinkgeld (ohne MwSt.);Brutto 7 %;Netto 7 %;MwSt. 7 %;Brutto 19 %;Netto 19 %;MwSt. 19 %"];
+    for (const e of list) {
+      const v = vatSplit(e), s = S[e.pay] || S.online;
+      for (const o of [s, T]) { o.n++; for (const f of ["g7", "n7", "v7", "g19", "n19", "v19", "tip", "fee", "total"]) o[f] += v[f]; }
+      rows.push([dt(e.t), tm(e.t), e.id.split(":")[1] || e.id, e.invNo || "", e.pay === "online" ? "Online (Stripe)" : "Vor Ort (bar/Karte)", e.type, eu(v.total), eu(v.fee), eu(v.tip), eu(v.g7), eu(v.n7), eu(v.v7), eu(v.g19), eu(v.n19), eu(v.v19)].join(";"));
+      for (const x of e.items || []) {
+        const rt = invRate(x), k = x.name + "|" + rt;
+        const a = art[k] || (art[k] = { name: x.name, rate: rt, qty: 0, g: 0 });
+        a.qty += x.qty;
+        a.g += Math.round(x.unit * 100) * x.qty;
+      }
+    }
+    const arts = ["Artikel;MwSt.-Satz;Menge;Umsatz brutto;Netto;MwSt."].concat(Object.values(art).sort((a, b) => b.g - a.g).map((a) => { const n = Math.round(a.g / (1 + a.rate / 100)); return [a.name, a.rate + " %", a.qty, eu(a.g), eu(n), eu(a.g - n)].join(";"); }));
+    const block = (title, s) => title + ": " + s.n + " Bestellungen, Umsatz brutto " + eu(s.total) + " €\n  Speisen und anteilige Liefergebühr 7 %: brutto " + eu(s.g7) + " €, netto " + eu(s.n7) + " €, MwSt. " + eu(s.v7) + " €\n  Getränke und anteilige Liefergebühr 19 %: brutto " + eu(s.g19) + " €, netto " + eu(s.n19) + " €, MwSt. " + eu(s.v19) + " €\n  Liefergebühren gesamt " + eu(s.fee) + " € (in den Steuersätzen enthalten), Trinkgeld ohne MwSt. " + eu(s.tip) + " €\n  MwSt. gesamt: " + eu(s.v7 + s.v19) + " €";
+    const [yy, mm] = ym.split("-");
+    const text = "Umsatzaufstellung " + mm + "/" + yy + " (Bestellungen über die Website)\n\n" + block("GESAMT", T) + "\n\n" + block("Online bezahlt (Stripe)", S.online) + "\n\n" + block("Zahlung vor Ort (bar oder Karte, bitte mit der Kasse abgleichen)", S.vorort) + "\n\nIm Anhang: alle Bestellungen einzeln und alle Artikel mit Steuersatz (CSV-Dateien, mit Excel zu öffnen).\n\nHinweise: Rückerstattungen in Stripe sind nicht abgezogen. Bestellungen per WhatsApp oder Telefon sind nicht enthalten. Vor-Ort-Bestellungen sind enthalten, auch wenn sie nicht abgeholt wurden. Steuersätze: Speisen 7 %, Getränke 19 %, Liefergebühr anteilig; Trinkgeld ohne MwSt. (bitte vom Steuerberater prüfen lassen).";
+    const csv = (s) => b64(new TextEncoder().encode(String.fromCharCode(65279) + s));
+    const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [INV_COPY_TO], subject: "Umsatzaufstellung " + mm + "/" + yy + ": " + eu(T.total) + " € (" + T.n + " Bestellungen)", text, attachments: [{ filename: "Umsatz-" + ym + "-Bestellungen.csv", content: csv(rows.join("\r\n")) }, { filename: "Umsatz-" + ym + "-Artikel.csv", content: csv(arts.join("\r\n")) }] }) });
+    if (r.ok && !forceMonth) await kv.put("rep:" + ym, String(now), { expirationTtl: 60 * 86400 });
+    await kv.put("repstatus", (r.ok ? "ok " : "fehler-" + r.status + " ") + ym);
+    return r.ok;
+  } catch (e) {
+    try { await kv.put("repstatus", "ausnahme"); } catch (e2) {}
   }
 }
 
@@ -879,6 +1020,6 @@ export default {
   // Cron: "0 */6 * * *" = 00:00, 06:00, 12:00, 18:00 UTC
   async scheduled(event, env, ctx) {
     if (event.cron === "*/2 * * * *") ctx.waitUntil(Promise.all([runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))), refreshRating(env)]));
-    else ctx.waitUntil(refreshEvents(env));
+    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env)]));
   },
 };
