@@ -177,7 +177,7 @@ function priceCart(menu, PR, mode, cart) {
     if (sauces.length) det.push("Soßen: " + sauces.join(", "));
     if (tops.length) det.push("Extra: " + tops.join(", "));
     if (sel.bake) det.push("Überbacken");
-    out.push({ name, det, note: str(l.note, 200), qty, unit });
+    out.push({ name, det, note: str(l.note, 200), qty, unit, cat: c });
   }
   return { lines: out, sum: Math.round(out.reduce((a, x) => a + x.unit * x.qty, 0) * 100) / 100 };
 }
@@ -211,6 +211,9 @@ async function handleCheckout(b, req, env) {
   const phoneDigits = phoneRaw.replace(/\D/g, "");
   if (phoneDigits.length < 8 || phoneDigits.length > 15) return json({ error: "phone" }, 400);
   const phone = phoneRaw.slice(0, 20);
+  const invRaw = String(b.invoiceEmail || "").trim().slice(0, 120);
+  const invEmail = !vorOrt && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(invRaw) ? invRaw : "";
+  if (invRaw && !vorOrt && !invEmail) return json({ error: "email" }, 400);
   const addr = lief ? str(b.addr, 200) : "";
   if (lief && addr.length < 6) return json({ error: "addr" }, 400);
   // Preise serverseitig nachrechnen
@@ -246,7 +249,7 @@ async function handleCheckout(b, req, env) {
     await notifyTelegram(env, rec);
     return json({ ok: true });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -361,6 +364,7 @@ async function handleStripeWebhook(req, env) {
       const ex = await getJSON(kv, `o:${id}`);
       if (ex && !ex.tgDone && (await notifyTelegram(env, ex)) === "ok") { ex.tgDone = true; await setJSON(kv, `o:${id}`, ex, { expirationTtl: ORDER_TTL_S }); }
     }
+    if (id && s.payment_status === "paid") await sendInvoice(env, await getJSON(kv, "o:" + id));
   }
   return json({ received: true });
 }
@@ -379,7 +383,7 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-" });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, iv: (await kv.get("invstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
@@ -612,6 +616,185 @@ async function refreshRating(env) {
     await kv.put("rtstatus", "ok");
   } catch (e) {
     await fail("ausnahme");
+  }
+}
+
+// ---------- Rechnung (PDF, DIN A4) und Versand per E-Mail (Resend) ----------
+const SELLER = { name: "Pizza & Baguettehaus am Königspalast", owner: "Inhaberin: Züleyha Kivanc (Einzelunternehmen)", street: "Westparkstraße 102", city: "47803 Krefeld", phone: "Telefon: 02151 4546528", mail: "pizzaundbaguettehausamkonigpal@gmail.com", tax: "Steuernummer: 117/5187/2618" };
+const INV_COPY_TO = "pizzaundbaguettehausamkonigpal@gmail.com";
+const INV_START = 1000; // erste Rechnungsnummer = O-1001
+const HW = { r: [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584], b: [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584] };
+const UMLAUT = { "ä": "a", "ö": "o", "ü": "u", "Ä": "A", "Ö": "O", "Ü": "U", "ß": "b", "é": "e", "è": "e", "á": "a", "à": "a", "ç": "c", "ñ": "n", "ş": "s", "ı": "i", "ğ": "g" };
+function cwid(ch, bold) {
+  const t = bold ? HW.b : HW.r;
+  const code = ch.charCodeAt(0);
+  if (code >= 32 && code <= 126) return t[code - 32];
+  if (ch === "€") return 556;
+  const m = UMLAUT[ch];
+  if (m) return t[m.charCodeAt(0) - 32];
+  return 556;
+}
+function cp1252(ch) {
+  const c = ch.charCodeAt(0);
+  if (c < 128 || (c >= 160 && c <= 255)) return c;
+  const M = { "€": 128, "„": 132, "“": 147, "”": 148, "’": 146, "‘": 145, "–": 150, "—": 151, "•": 149 };
+  return M[ch] || 63;
+}
+function pdfEsc(s) {
+  let o = "";
+  for (const ch of String(s)) {
+    const b = cp1252(ch);
+    o += b === 92 || b === 40 || b === 41 ? "\\" + String.fromCharCode(b) : b < 32 || b > 126 ? "\\" + b.toString(8).padStart(3, "0") : String.fromCharCode(b);
+  }
+  return o;
+}
+function pdfBuild(pages) {
+  const objs = [];
+  objs.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objs.push("<< /Type /Pages /Kids [" + pages.map((_, i) => (5 + i * 2) + " 0 R").join(" ") + "] /Count " + pages.length + " >>");
+  objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+  objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+  pages.forEach((c, i) => {
+    objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents " + (6 + i * 2) + " 0 R >>");
+    objs.push("<< /Length " + c.length + " >>\nstream\n" + c + "\nendstream");
+  });
+  let out = "%PDF-1.4\n";
+  const offs = [];
+  objs.forEach((o, i) => { offs.push(out.length); out += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
+  const xr = out.length;
+  out += "xref\n0 " + (objs.length + 1) + "\n0000000000 65535 f \n" + offs.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join("");
+  out += "trailer\n<< /Size " + (objs.length + 1) + " /Root 1 0 R >>\nstartxref\n" + xr + "\n%%EOF\n";
+  const bytes = new Uint8Array(out.length);
+  for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+  return bytes;
+}
+const invRate = (x) => (x.cat === "getraenke" && !/milch/i.test(x.name || "") ? 19 : 7);
+function buildInvoicePdf(rec) {
+  const money = (cents) => (cents / 100).toFixed(2).replace(".", ",") + " €";
+  const dfmt = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(ts));
+  const tfmt = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ts));
+  const pages = [];
+  let c = [];
+  let y = 0;
+  const W = (s, bold, size) => { let w = 0; for (const ch of String(s)) w += cwid(ch, bold); return (w * size) / 1000; };
+  const T = (s, x, yy, size, bold, grey, right, arr) => { (arr || c).push((grey ? "0.4 g" : "0 g") + " BT /" + (bold ? "F2" : "F1") + " " + size + " Tf " + (right ? x - W(s, bold, size) : x).toFixed(2) + " " + yy.toFixed(2) + " Td (" + pdfEsc(s) + ") Tj ET"); };
+  const Ln = (x1, y1, x2, y2, w) => c.push((w || 0.5) + " w 0.55 G " + x1 + " " + y1 + " m " + x2 + " " + y2 + " l S");
+  const Rect = (x, yy, w, h, g) => c.push(g + " g " + x + " " + yy + " " + w + " " + h + " re f");
+  const wrap = (s, bold, size, maxW) => {
+    const words = String(s).split(/\s+/).filter(Boolean), lines = [];
+    let cur = "";
+    for (const w of words) { const t = cur ? cur + " " + w : w; if (!cur || W(t, bold, size) <= maxW) cur = t; else { lines.push(cur); cur = w; } }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [""];
+  };
+  const L = 56, R = 539;
+  const no = rec.invNo || "O-0000", inDate = rec.invDate || rec.paidAt || rec.t;
+  const rows = (rec.items && rec.items.length ? rec.items : [{ name: "Online-Bestellung (Details siehe Zahlungsbeleg)", det: [], qty: 1, unit: (rec.amount || 0) / 100 - (rec.fee || 0), cat: "" }]).map((x) => ({ name: x.name, det: (x.det || []).concat(x.note ? ["Anmerkung: " + x.note] : []), qty: x.qty, unitC: Math.round(x.unit * 100), rate: invRate(x) }));
+  const gross = { 7: 0, 19: 0 };
+  rows.forEach((r) => { r.totC = r.unitC * r.qty; gross[r.rate] += r.totC; });
+  const feeC = Math.round((rec.fee || 0) * 100);
+  if (feeC > 0) {
+    const g = gross[7] + gross[19] || 1;
+    const f7 = Math.round((feeC * gross[7]) / g), f19 = feeC - f7;
+    const label = "Liefergebühr" + (rec.km ? " (" + String(rec.km).replace(".", ",") + " km Fahrstrecke)" : "");
+    if (f7 > 0) rows.push({ name: label + (f19 > 0 ? ", Anteil 7 %" : ""), det: [], qty: 1, unitC: f7, totC: f7, rate: 7 });
+    if (f19 > 0) rows.push({ name: label + (f7 > 0 ? ", Anteil 19 %" : ""), det: [], qty: 1, unitC: f19, totC: f19, rate: 19 });
+    gross[7] += f7; gross[19] += f19;
+  }
+  const totalC = gross[7] + gross[19];
+  const header = (first) => {
+    c = [];
+    if (first) {
+      T(SELLER.name, L, 790, 13, true);
+      [SELLER.owner, SELLER.street + ", " + SELLER.city, SELLER.phone, "E-Mail: " + SELLER.mail].forEach((s, i) => T(s, L, 775 - i * 12.5, 9, false, true));
+      T("RECHNUNG", R, 790, 22, true, false, true);
+      [["Rechnungsnummer", no], ["Rechnungsdatum", dfmt(inDate)], ["Leistungsdatum", dfmt(inDate)], ["Bestellt am", tfmt(rec.t)]].forEach((p, i) => { T(p[0], 400, 764 - i * 14, 9, false, true); T(p[1], R, 764 - i * 14, 10, true, false, true); });
+      T(SELLER.name + " · " + SELLER.street + " · " + SELLER.city, L, 696, 7, false, true);
+      let yy = 681;
+      T(rec.name || "Kunde", L, yy, 11, true);
+      if (rec.type === "Lieferung" && rec.addr) wrap(rec.addr, false, 10, 250).slice(0, 3).forEach((s) => { yy -= 13; T(s, L, yy, 10); });
+      if (rec.invEmail) { yy -= 13; T(rec.invEmail, L, yy, 10); }
+      T("Rechnung " + no, L, 610, 13, true);
+      T("Vielen Dank für deine Bestellung. Wir berechnen dir folgende Leistungen:", L, 593, 10);
+      y = 575;
+    } else {
+      T(SELLER.name, L, 800, 10, true);
+      T("Rechnung " + no + " (Fortsetzung)", R, 800, 10, false, true, true);
+      y = 770;
+    }
+    Rect(L, y - 5, R - L, 18, 0.9);
+    T("Pos.", L + 4, y, 9, true); T("Bezeichnung", L + 34, y, 9, true); T("Menge", 335, y, 9, true, false, true); T("Einzelpreis", 405, y, 9, true, false, true); T("MwSt.", 452, y, 9, true, false, true); T("Gesamt", R - 4, y, 9, true, false, true);
+    y -= 20;
+  };
+  header(true);
+  rows.forEach((r, i) => {
+    const nameL = wrap(r.name, false, 9.5, 255), detL = [];
+    r.det.forEach((d) => wrap(d, false, 8, 250).forEach((s) => detL.push(s)));
+    const h = nameL.length * 12 + detL.length * 10 + 6;
+    if (y - h < 100) { pages.push(c); header(false); }
+    T(String(i + 1), L + 4, y, 9.5);
+    nameL.forEach((s, k) => T(s, L + 34, y - k * 12, 9.5));
+    detL.forEach((s, k) => T(s, L + 40, y - nameL.length * 12 - k * 10 + 2, 8, false, true));
+    T(String(r.qty), 335, y, 9.5, false, false, true); T(money(r.unitC), 405, y, 9.5, false, false, true); T(r.rate + " %", 452, y, 9.5, false, false, true); T(money(r.totC), R - 4, y, 9.5, false, false, true);
+    y -= h;
+    Ln(L, y + 10, R, y + 10, 0.3);
+  });
+  if (y < 230) { pages.push(c); header(false); }
+  y -= 12;
+  [7, 19].forEach((rt) => {
+    if (!gross[rt]) return;
+    const net = Math.round(gross[rt] / (1 + rt / 100)), vat = gross[rt] - net;
+    T("Nettobetrag " + rt + " %", 400, y, 9.5, false, false, true); T(money(net), R - 4, y, 9.5, false, false, true); y -= 13;
+    T("Umsatzsteuer " + rt + " %", 400, y, 9.5, false, false, true); T(money(vat), R - 4, y, 9.5, false, false, true); y -= 15;
+  });
+  Ln(330, y + 6, R, y + 6, 0.8);
+  y -= 8;
+  T("Gesamtbetrag (brutto)", 400, y, 11, true, false, true); T(money(totalC), R - 4, y, 11, true, false, true); y -= 18;
+  T("Bezahlt per Online-Zahlung am " + dfmt(rec.paidAt || inDate), 400, y, 9.5, false, false, true); T("-" + money(totalC), R - 4, y, 9.5, false, false, true); y -= 14;
+  T("Offener Betrag", 400, y, 9.5, true, false, true); T(money(0), R - 4, y, 9.5, true, false, true); y -= 30;
+  wrap("Alle Preise sind Endpreise inklusive der gesetzlichen Umsatzsteuer. Der Rechnungsbetrag wurde bereits bezahlt. Das Leistungsdatum entspricht dem Rechnungsdatum.", false, 8.5, R - L).forEach((s) => { T(s, L, y, 8.5, false, true); y -= 11; });
+  pages.push(c);
+  pages.forEach((arr, i) => {
+    arr.push("0.8 w 0.55 G " + L + " 62 m " + R + " 62 l S");
+    T(SELLER.name + " · " + SELLER.owner, L, 50, 7.5, false, true, false, arr);
+    T(SELLER.street + ", " + SELLER.city + " · " + SELLER.phone + " · " + SELLER.mail + " · " + SELLER.tax, L, 40, 7.5, false, true, false, arr);
+    T("Seite " + (i + 1) + " von " + pages.length, R, 50, 7.5, false, true, true, arr);
+  });
+  return pdfBuild(pages.map((a) => a.join("\n")));
+}
+function b64(bytes) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+async function sendMail(env, to, subject, text, filename, pdf) {
+  const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [to], reply_to: INV_COPY_TO, subject, text, attachments: [{ filename, content: b64(pdf) }] }) });
+  if (!r.ok) console.log("Rechnungs-Mail fehlgeschlagen", r.status, (await r.text()).slice(0, 200));
+  return r.ok;
+}
+// Rechnung nach jeder bezahlten Online-Bestellung: PDF an die Geschäftsmail, auf Wunsch auch an den Kunden.
+async function sendInvoice(env, rec) {
+  const kv = env.DATA;
+  try {
+    if (!env.RESEND_API_KEY || !rec || !rec.paid) return;
+    if (rec.invBiz && (!rec.invEmail || rec.invCust)) return;
+    if (!rec.invNo) {
+      const n = (Number(await kv.get("invseq")) || INV_START) + 1;
+      await kv.put("invseq", String(n));
+      rec.invNo = "O-" + n;
+      rec.invDate = rec.paidAt || Date.now();
+      await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
+    }
+    const pdf = buildInvoicePdf(rec), fn = "Rechnung-" + rec.invNo + ".pdf";
+    const total = ((typeof rec.amount === "number" ? rec.amount : Math.round(((rec.total || 0) + (rec.fee || 0)) * 100)) / 100).toFixed(2).replace(".", ",") + " €";
+    if (!rec.invBiz) {
+      const body = "Neue bezahlte Online-Bestellung. Die Rechnung " + rec.invNo + " liegt als PDF an.\n\nKunde: " + rec.name + (rec.phone ? "\nTelefon: " + rec.phone : "") + "\nArt: " + rec.type + (rec.addr ? " (" + rec.addr + ")" : "") + "\nBetrag: " + total + "\nRechnung an Kunde: " + (rec.invEmail ? "ja, an " + rec.invEmail : "nein, nicht angefordert") + "\n\nBitte diese E-Mail als Buchhaltungsbeleg aufbewahren.";
+      if (await sendMail(env, INV_COPY_TO, "Rechnung " + rec.invNo + ": Online-Bestellung von " + rec.name + " (" + total + ")", body, fn, pdf)) rec.invBiz = true;
+    }
+    if (rec.invEmail && !rec.invCust) {
+      const body = "Hallo " + rec.name + ",\n\nvielen Dank für deine Bestellung beim Pizza & Baguettehaus am Königspalast. Im Anhang findest du deine Rechnung " + rec.invNo + " über " + total + ".\n\nBei Fragen erreichst du uns telefonisch unter 02151 4546528 oder per Antwort auf diese E-Mail.\n\nGuten Appetit!\nPizza & Baguettehaus am Königspalast";
+      if (await sendMail(env, rec.invEmail, "Deine Rechnung " + rec.invNo + " – Pizza & Baguettehaus am Königspalast", body, fn, pdf)) rec.invCust = true;
+    }
+    await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
+    await kv.put("invstatus", rec.invBiz && (!rec.invEmail || rec.invCust) ? "ok" : "fehler");
+  } catch (e) {
+    try { await kv.put("invstatus", "ausnahme"); } catch (e2) {}
   }
 }
 
