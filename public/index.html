@@ -494,10 +494,11 @@ function computeStatus(){
       ?{s:"open",t:"Jetzt geöffnet",x:`Vom Inhaber bestätigt (${hm} Uhr). Wann wir schließen, kann sich je nach Veranstaltung ändern.`}
       :{s:"closed",t:"Gerade geschlossen",x:`Vom Inhaber bestätigt (${hm} Uhr).`};
   }
-  const live=evToday.find(e=>nowM>=mins(e.open)&&nowM<mins(e.start)+180);
+  const dur=e=>/pinguine/i.test(e.title)?240:180;
+  const live=evToday.find(e=>nowM>=mins(e.open)&&nowM<mins(e.start)+dur(e));
   if(regOpen&&!live)return{s:"open",t:"Jetzt geöffnet",x:"Heute bis "+reg[1]+" Uhr."+(evToday[0]?` Wegen „${evToday[0].title}“ öffnen wir am Nachmittag/Abend erneut, ab ca. ${evToday[0].open} Uhr.`:"")};
   if(live)return{s:"event",t:"Eventtag: vermutlich geöffnet",x:`Wegen „${live.title}“ öffnen wir ab ca. ${live.open} Uhr. Wann wir schließen, steht nicht fest (oft bis 2–3 Uhr, bei Konzerten oder schlechtem Wetter früher).`,call:true};
-  const late=evToday.find(e=>nowM>=mins(e.start)+180)||(nowM<4*60&&evYest.length);
+  const late=evToday.find(e=>nowM>=mins(e.start)+dur(e))||(nowM<4*60&&evYest.length);
   if(late)return{s:"unknown",t:"Eventtag: bitte kurz anrufen",x:"Heute war oder ist Veranstaltung in der Arena. Ob wir noch geöffnet haben, hängt vom Abend ab.",call:true};
   const next=evToday.find(e=>nowM<mins(e.open));
   if(next)return{s:"closed",t:"Gerade geschlossen",x:`Heute Eventtag („${next.title}“). Wir öffnen ab ca. ${next.open} Uhr.`};
