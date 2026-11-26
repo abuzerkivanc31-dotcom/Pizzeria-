@@ -479,6 +479,110 @@ export function parseEvents(html) {
   return out;
 }
 
+// ---------- Rückfrage "noch geöffnet?" bei Veranstaltungen (per Telegram) ----------
+// Eishockey (Krefeld Pinguine): erste Frage 4 Stunden nach Beginn, danach stündlich.
+// Alle anderen Veranstaltungen: erste Frage 1 Stunde nach Beginn, danach stündlich.
+// Antwort "Ja": nach einer Stunde wieder fragen. "Nein" oder keine Antwort in 20 Minuten: Laden auf der Website schließen.
+const ASK_TIMEOUT_MS = 20 * 60000;
+const ASK_STEP_MS = 3600000;
+const ASK_MAX_AFTER_START_MS = 13 * 3600000;
+const isHockey = (e) => /pinguine/i.test((e && e.title) || "");
+function tzOffsetMs(ts) {
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(ts));
+  const g = (t) => Number(p.find((x) => x.type === t).value);
+  return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) - ts;
+}
+function berlinEpoch(date, hm) {
+  const [y, mo, d] = date.split("-").map(Number), [h, mi] = hm.split(":").map(Number);
+  const base = Date.UTC(y, mo - 1, d, h, mi);
+  let ts = base - tzOffsetMs(base);
+  ts = base - tzOffsetMs(ts);
+  return ts;
+}
+const berlinDate = (ts) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date(ts));
+function nextMorning(now) {
+  let t = berlinEpoch(berlinDate(now), "06:00");
+  if (t <= now) t = berlinEpoch(berlinDate(now + 86400000), "06:00");
+  return t;
+}
+async function tgApi(env, method, body) {
+  try {
+    const r = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/" + method, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+    return await r.json().catch(() => ({ ok: false }));
+  } catch (e) { return { ok: false }; }
+}
+async function tgRecipients(env) {
+  const raw = env.TELEGRAM_CHAT_ID || (await env.DATA.get("tgchat")) || "";
+  return String(raw).split(/[\s,;]+/).filter(Boolean);
+}
+async function tgPoll(env, kv, ids, pend) {
+  const off = Number(await kv.get("tgoff")) || 0;
+  const r = await tgApi(env, "getUpdates", off ? { offset: off } : {});
+  const list = (r && r.result) || [];
+  let ans = null, maxId = off - 1;
+  for (const u of list) {
+    maxId = Math.max(maxId, u.update_id);
+    if (u.callback_query) {
+      const cq = u.callback_query, from = String(cq.message && cq.message.chat && cq.message.chat.id);
+      const parts = String(cq.data || "").split(":");
+      await tgApi(env, "answerCallbackQuery", { callback_query_id: cq.id });
+      if (ids.includes(from) && parts[1] === pend.id && (parts[0] === "ja" || parts[0] === "nein")) ans = parts[0];
+    } else if (u.message && u.message.text && ids.includes(String(u.message.chat.id)) && u.message.date * 1000 >= pend.at - 5000) {
+      const tx = u.message.text.trim().toLowerCase().replace(/[^a-zäöü]/g, "");
+      if (tx === "ja" || tx === "nein") ans = tx;
+    }
+  }
+  if (list.length) await kv.put("tgoff", String(maxId + 1));
+  return ans;
+}
+async function runAsk(env) {
+  if (!env.TELEGRAM_BOT_TOKEN) return;
+  const kv = env.DATA, now = Date.now();
+  const ids = await tgRecipients(env);
+  if (!ids.length) return;
+  let evs = ((await getJSON(kv, "events")) || {}).events || [];
+  if (!evs.length) {
+    try { evs = (await (await env.ASSETS.fetch(new URL("/events.json", "https://pizzeria-koenigspalast.de"))).json()).events || []; } catch (e) { evs = []; }
+  }
+  let active = null;
+  for (const e of evs) {
+    if (!e.date || !e.start) continue;
+    const start = berlinEpoch(e.date, e.start);
+    const first = start + (isHockey(e) ? 4 : 1) * 3600000;
+    if (now >= first && now <= start + ASK_MAX_AFTER_START_MS && (!active || start > active.start)) active = { e, start, first, key: e.date + "|" + e.start + "|" + e.title };
+  }
+  const old = await getJSON(kv, "ask");
+  const before = JSON.stringify(old);
+  let st = old;
+  if (active && (!st || st.ev !== active.key)) st = { ev: active.key, next: active.first, pend: null, done: false };
+  if (!st) return;
+  const owner = ids[0];
+  if (st.pend) {
+    const ans = await tgPoll(env, kv, ids, st.pend);
+    if (ans === "ja") {
+      await setJSON(kv, "status", { state: "open", set: now, expires: st.next + ASK_TIMEOUT_MS + 300000 });
+      st.pend = null;
+      await tgApi(env, "sendMessage", { chat_id: owner, text: "✅ Alles klar, ich frage in einer Stunde wieder." });
+    } else if (ans === "nein" || now >= st.pend.at + ASK_TIMEOUT_MS) {
+      await setJSON(kv, "status", { state: "closed", set: now, expires: nextMorning(now) });
+      st.pend = null; st.done = true;
+      await tgApi(env, "sendMessage", { chat_id: owner, text: (ans === "nein" ? "⛔ Verstanden. " : "⛔ Keine Antwort innerhalb von 20 Minuten. ") + "Der Laden ist auf der Website bis morgen 06:00 Uhr geschlossen. Mit der Inhaber-PIN auf der Website kannst du ihn jederzeit wieder öffnen." });
+    }
+  } else if (!st.done && active && st.ev === active.key && now >= st.next) {
+    const cur = await getJSON(kv, "status");
+    if (cur && cur.state === "closed" && cur.expires > now) st.done = true;
+    else {
+      const dr = await tgApi(env, "getUpdates", { offset: -1 });
+      const last = ((dr && dr.result) || [])[0];
+      if (last) await kv.put("tgoff", String(last.update_id + 1));
+      const id = String(now), e = active.e;
+      const r = await tgApi(env, "sendMessage", { chat_id: owner, text: "🕐 Habt ihr noch geöffnet?\n" + e.title + (e.subtitle ? " – " + e.subtitle : "") + "\nBeginn: " + e.start + " Uhr\n\nAntworte mit Ja oder Nein. Ohne Antwort in 20 Minuten wird der Laden auf der Website geschlossen.", reply_markup: { inline_keyboard: [[{ text: "✅ Ja, noch offen", callback_data: "ja:" + id }, { text: "⛔ Nein, schließen", callback_data: "nein:" + id }]] } });
+      if (r && r.ok) { st.pend = { at: now, id }; st.next = now + ASK_STEP_MS; }
+    }
+  }
+  if (JSON.stringify(st) !== before) await setJSON(kv, "ask", st);
+}
+
 async function refreshEvents(env) {
   const all = new Map();
   const now = new Date();
@@ -514,6 +618,7 @@ export default {
   },
   // Cron: "0 */6 * * *" = 00:00, 06:00, 12:00, 18:00 UTC
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(refreshEvents(env));
+    if (event.cron === "*/2 * * * *") ctx.waitUntil(runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))));
+    else ctx.waitUntil(refreshEvents(env));
   },
 };
