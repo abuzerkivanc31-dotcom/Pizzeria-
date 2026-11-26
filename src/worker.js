@@ -31,7 +31,7 @@ async function routeKm(env, addr) {
     headers: {
       "content-type": "application/json",
       "X-Goog-Api-Key": env.GOOGLE_MAPS_KEY,
-      "X-Goog-FieldMask": "routes.distanceMeters",
+      "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
     },
     body: JSON.stringify({
       origin: { address: SHOP_ADDR },
@@ -45,7 +45,7 @@ async function routeKm(env, addr) {
   if (!r.ok) return { error: r.status === 400 || r.status === 404 ? "addr" : "upstream" };
   const j = await r.json();
   if (!j.routes || !j.routes[0]) return { error: "addr" };
-  return { km: (j.routes[0].distanceMeters || 0) / 1000 };
+  return { km: (j.routes[0].distanceMeters || 0) / 1000, sec: parseInt(String(j.routes[0].duration || "0"), 10) || 0 };
 }
 async function handleRoute(b, req, env) {
   if (!env.GOOGLE_MAPS_KEY) return json({ error: "nokey" }, 503);
@@ -214,6 +214,9 @@ async function handleCheckout(b, req, env) {
   const invRaw = String(b.invoiceEmail || "").trim().slice(0, 120);
   const invEmail = !vorOrt && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(invRaw) ? invRaw : "";
   if (invRaw && !vorOrt && !invEmail) return json({ error: "email" }, 400);
+  const mailRaw = String(b.email || "").trim().slice(0, 120);
+  const mail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mailRaw) ? mailRaw : "";
+  if (lief && !mail) return json({ error: "email" }, 400);
   const addr = lief ? str(b.addr, 200) : "";
   if (lief && addr.length < 6) return json({ error: "addr" }, 400);
   // Preise serverseitig nachrechnen
@@ -224,7 +227,7 @@ async function handleCheckout(b, req, env) {
   const mode = lief ? "e" : pm && pm.until > Date.now() && (pm.mode === "d" || pm.mode === "e") ? pm.mode : autoMode();
   const priced = priceCart(menu, PR, mode, b.cart);
   if (priced.error) return json({ error: "cart" }, 400);
-  let fee = 0, km = 0;
+  let fee = 0, km = 0, tip = 0, driveMin = 0;
   if (lief) {
     if (!env.GOOGLE_MAPS_KEY) return json({ error: "route" }, 503);
     let a = addr;
@@ -232,11 +235,15 @@ async function handleCheckout(b, req, env) {
     const r = await routeKm(env, a);
     if (r.error) return json({ error: r.error === "addr" ? "addr" : "route" }, r.error === "addr" ? 422 : 502);
     const t = tierFor(r.km);
-    if (priced.sum < t.min) return json({ error: "min", min: t.min }, 400);
+    if (priced.sum < t.min) {
+      if (!b.tipFill) return json({ error: "min", min: t.min }, 400);
+      tip = Math.round((t.min - priced.sum) * 100) / 100; // Fehlbetrag wird als Trinkgeld aufgefüllt
+    }
     fee = t.fee;
     km = Math.round(r.km * 10) / 10;
+    driveMin = Math.ceil((r.sec || 0) / 60);
   }
-  const total = Math.round((priced.sum + fee) * 100) / 100;
+  const total = Math.round((priced.sum + fee + tip) * 100) / 100;
   if (total > 500) return json({ error: "cart" }, 400);
   if (Math.round(Number(b.clientTotal) * 100) !== Math.round(total * 100)) return json({ error: "mismatch", total }, 409);
   // Bestellung bis zur Zahlung zwischenspeichern (2 Stunden)
@@ -244,12 +251,13 @@ async function handleCheckout(b, req, env) {
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
   if (vorOrt) {
-    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, paid: false, pay: "vorort" };
+    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, phone, paid: false, pay: "vorort" };
     await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
     await notifyTelegram(env, rec);
+    await sendEta(env, rec);
     return json({ ok: true });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -274,6 +282,7 @@ async function handleCheckout(b, req, env) {
   };
   for (const x of priced.lines) item(x.name, [...x.det, x.note ? "Anmerkung: " + x.note : ""].filter(Boolean).join(" · "), Math.round(x.unit * 100), x.qty);
   if (fee > 0) item("Liefergebühr", `${String(km).replace(".", ",")} km Fahrstrecke`, Math.round(fee * 100), 1);
+  if (tip > 0) item("Trinkgeld (Aufrundung auf den Mindestbestellwert)", "", Math.round(tip * 100), 1);
   const r = await stripePost(env, "checkout/sessions", p);
   if (!r.ok || !r.j.url) {
     await kv.delete(`p:${id}`);
@@ -308,7 +317,7 @@ async function notifyTelegram(env, rec) {
       await env.DATA.put("tgchat", chat);
     }
     const eurS = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
-    const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0);
+    const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0) + (rec.tip || 0);
     const text = [
       rec.paid ? "🍕 Neue bezahlte Bestellung" : "🍕 Neue Bestellung: Zahlung vor Ort (noch NICHT bezahlt)",
       "",
@@ -318,6 +327,7 @@ async function notifyTelegram(env, rec) {
       rec.phone ? "Telefon: " + rec.phone : "",
       "",
       ...(rec.lines || []),
+      rec.tip ? "Trinkgeld (Aufrundung auf Mindestbestellwert): " + eurS(rec.tip) : "",
       rec.note ? "\nAnmerkung: " + rec.note : "",
       "",
       (rec.paid ? "Gesamt bezahlt: " : "Zu zahlen bei Abholung/Lieferung (bar oder Karte): ") + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
@@ -364,7 +374,10 @@ async function handleStripeWebhook(req, env) {
       const ex = await getJSON(kv, `o:${id}`);
       if (ex && !ex.tgDone && (await notifyTelegram(env, ex)) === "ok") { ex.tgDone = true; await setJSON(kv, `o:${id}`, ex, { expirationTtl: ORDER_TTL_S }); }
     }
-    if (id && s.payment_status === "paid") await sendInvoice(env, await getJSON(kv, "o:" + id));
+    if (id && s.payment_status === "paid") {
+      await sendInvoice(env, await getJSON(kv, "o:" + id));
+      await sendEta(env, await getJSON(kv, "o:" + id));
+    }
   }
   return json({ received: true });
 }
@@ -692,15 +705,17 @@ function buildInvoicePdf(rec) {
   const rows = (rec.items && rec.items.length ? rec.items : [{ name: "Online-Bestellung (Details siehe Zahlungsbeleg)", det: [], qty: 1, unit: (rec.amount || 0) / 100 - (rec.fee || 0), cat: "" }]).map((x) => ({ name: x.name, det: (x.desc && /pfand/i.test(x.desc) ? [x.desc.charAt(0).toUpperCase() + x.desc.slice(1)] : []).concat(x.det || []).concat(x.note ? ["Anmerkung: " + x.note] : []), qty: x.qty, unitC: Math.round(x.unit * 100), rate: invRate(x) }));
   const gross = { 7: 0, 19: 0 };
   rows.forEach((r) => { r.totC = r.unitC * r.qty; gross[r.rate] += r.totC; });
-  const feeC = Math.round((rec.fee || 0) * 100);
-  if (feeC > 0) {
-    const g = gross[7] + gross[19] || 1;
-    const f7 = Math.round((feeC * gross[7]) / g), f19 = feeC - f7;
-    const label = "Liefergebühr" + (rec.km ? " (" + String(rec.km).replace(".", ",") + " km Fahrstrecke)" : "");
-    if (f7 > 0) rows.push({ name: label + (f19 > 0 ? ", Anteil 7 %" : ""), det: [], qty: 1, unitC: f7, totC: f7, rate: 7 });
-    if (f19 > 0) rows.push({ name: label + (f7 > 0 ? ", Anteil 19 %" : ""), det: [], qty: 1, unitC: f19, totC: f19, rate: 19 });
-    gross[7] += f7; gross[19] += f19;
-  }
+  const base7 = gross[7], base19 = gross[19];
+  const addExtra = (label, cents) => {
+    if (cents <= 0) return;
+    const g = base7 + base19 || 1;
+    const a7 = Math.round((cents * base7) / g), a19 = cents - a7;
+    if (a7 > 0) rows.push({ name: label + (a19 > 0 ? ", Anteil 7 %" : ""), det: [], qty: 1, unitC: a7, totC: a7, rate: 7 });
+    if (a19 > 0) rows.push({ name: label + (a7 > 0 ? ", Anteil 19 %" : ""), det: [], qty: 1, unitC: a19, totC: a19, rate: 19 });
+    gross[7] += a7; gross[19] += a19;
+  };
+  addExtra("Liefergebühr" + (rec.km ? " (" + String(rec.km).replace(".", ",") + " km)" : ""), Math.round((rec.fee || 0) * 100));
+  addExtra("Trinkgeld (Aufrundung)", Math.round((rec.tip || 0) * 100));
   const totalC = gross[7] + gross[19];
   const header = (first) => {
     c = [];
@@ -728,7 +743,7 @@ function buildInvoicePdf(rec) {
   };
   header(true);
   rows.forEach((r, i) => {
-    const nameL = wrap(r.name, false, 9.5, 255), detL = [];
+    const nameL = wrap(r.name, false, 9.5, 225), detL = [];
     r.det.forEach((d) => wrap(d, false, 8, 250).forEach((s) => detL.push(s)));
     const h = nameL.length * 12 + detL.length * 10 + 6;
     if (y - h < 100) { pages.push(c); header(false); }
@@ -745,14 +760,14 @@ function buildInvoicePdf(rec) {
     if (!gross[rt]) return;
     const net = Math.round(gross[rt] / (1 + rt / 100)), vat = gross[rt] - net;
     T("Nettobetrag " + rt + " %", 400, y, 9.5, false, false, true); T(money(net), R - 4, y, 9.5, false, false, true); y -= 13;
-    T("Umsatzsteuer " + rt + " %", 400, y, 9.5, false, false, true); T(money(vat), R - 4, y, 9.5, false, false, true); y -= 15;
+    T("enthaltene MwSt. " + rt + " %", 400, y, 9.5, false, false, true); T(money(vat), R - 4, y, 9.5, false, false, true); y -= 15;
   });
   Ln(330, y + 6, R, y + 6, 0.8);
   y -= 8;
   T("Gesamtbetrag (brutto)", 400, y, 11, true, false, true); T(money(totalC), R - 4, y, 11, true, false, true); y -= 18;
   T("Bezahlt per Online-Zahlung am " + dfmt(rec.paidAt || inDate), 400, y, 9.5, false, false, true); T("-" + money(totalC), R - 4, y, 9.5, false, false, true); y -= 14;
   T("Offener Betrag", 400, y, 9.5, true, false, true); T(money(0), R - 4, y, 9.5, true, false, true); y -= 30;
-  wrap("Alle Preise sind Endpreise inklusive der gesetzlichen Umsatzsteuer. Der Rechnungsbetrag wurde bereits bezahlt. Das Leistungsdatum entspricht dem Rechnungsdatum.", false, 8.5, R - L).forEach((s) => { T(s, L, y, 8.5, false, true); y -= 11; });
+  wrap("Alle Preise sind Endpreise inklusive der gesetzlichen Mehrwertsteuer (MwSt.). Der Rechnungsbetrag wurde bereits bezahlt. Das Leistungsdatum entspricht dem Rechnungsdatum.", false, 8.5, R - L).forEach((s) => { T(s, L, y, 8.5, false, true); y -= 11; });
   pages.push(c);
   pages.forEach((arr, i) => {
     arr.push("0.8 w 0.55 G " + L + " 62 m " + R + " 62 l S");
@@ -764,9 +779,39 @@ function buildInvoicePdf(rec) {
 }
 function b64(bytes) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
 async function sendMail(env, to, subject, text, filename, pdf) {
-  const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [to], reply_to: INV_COPY_TO, subject, text, attachments: [{ filename, content: b64(pdf) }] }) });
+  const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [to], reply_to: INV_COPY_TO, subject, text, attachments: pdf ? [{ filename, content: b64(pdf) }] : undefined }) });
   if (!r.ok) console.log("Rechnungs-Mail fehlgeschlagen", r.status, (await r.text()).slice(0, 200));
   return r.ok;
+}
+// Mail mit voraussichtlicher Ankunftszeit bei Lieferung (bezahlt oder Zahlung vor Ort). Bei einer Wunschzeit wird keine andere Uhrzeit genannt.
+async function sendEta(env, rec) {
+  const kv = env.DATA;
+  try {
+    if (!env.RESEND_API_KEY || !rec || rec.type !== "Lieferung" || !rec.email || rec.etaMail) return;
+    const wish = String(rec.time || "").trim();
+    const hasWish = /\d/.test(wish);
+    const total = ((typeof rec.amount === "number" ? rec.amount : Math.round(((rec.total || 0) + (rec.fee || 0) + (rec.tip || 0)) * 100)) / 100).toFixed(2).replace(".", ",") + " €";
+    const pay = rec.paid ? "Du hast bereits online bezahlt." : "Bitte bezahle bei der Lieferung bar oder mit Karte.";
+    let subject, mid;
+    if (hasWish) {
+      subject = "Deine Bestellung beim Pizza & Baguettehaus am Königspalast: Lieferung zu deiner Wunschzeit";
+      mid = "Du hast als Wunschzeit angegeben: " + wish + ". Wir richten uns danach. Falls das nicht möglich ist, melden wir uns telefonisch bei dir.";
+    } else {
+      const base = rec.paid ? rec.paidAt || Date.now() : rec.t;
+      const drive = Math.max(0, Math.ceil(Number(rec.driveMin) || 0));
+      const arr = Math.ceil((base + (35 + drive) * 60000) / 300000) * 300000;
+      const hm = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" }).format(new Date(arr));
+      subject = "Deine Bestellung beim Pizza & Baguettehaus am Königspalast: voraussichtliche Lieferung gegen " + hm + " Uhr";
+      mid = "Voraussichtliche Ankunft: ca. " + hm + " Uhr (ca. 35 Minuten Zubereitung plus ca. " + drive + " Minuten Fahrzeit).";
+    }
+    const body = "Hallo " + rec.name + ",\n\nvielen Dank für deine Bestellung (" + total + ").\n\n" + mid + "\n\nLieferadresse: " + rec.addr + "\n" + pay + "\n\nBei Fragen erreichst du uns unter 02151 4546528.\n\nPizza & Baguettehaus am Königspalast";
+    if (await sendMail(env, rec.email, subject, body)) {
+      rec.etaMail = true;
+      await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
+    }
+  } catch (e) {
+    console.log("ETA-Mail Fehler", String(e));
+  }
 }
 // Rechnung nach jeder bezahlten Online-Bestellung: PDF an die Geschäftsmail, auf Wunsch auch an den Kunden.
 async function sendInvoice(env, rec) {
