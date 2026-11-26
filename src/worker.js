@@ -379,7 +379,7 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-" });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
@@ -583,6 +583,38 @@ async function runAsk(env) {
   if (JSON.stringify(st) !== before) await setJSON(kv, "ask", st);
 }
 
+// ---------- Google-Bewertung (Places API, New) ----------
+// Holt Bewertung und Anzahl für den Laden und speichert sie unter "rating". Höchstens einmal in 20 Stunden; bei Fehlern frühestens nach 30 Minuten erneut.
+async function refreshRating(env) {
+  const kv = env.DATA;
+  const fail = async (s) => { await kv.put("rtstatus", s); await kv.put("rtwait", String(Date.now() + 1800000)); };
+  try {
+    if (!env.GOOGLE_MAPS_KEY) return;
+    const cur = await getJSON(kv, "rating");
+    if (cur && cur.source === "google" && Date.now() - cur.updated < 20 * 3600000) return;
+    if (Date.now() < (Number(await kv.get("rtwait")) || 0)) return;
+    const H = { "content-type": "application/json", "X-Goog-Api-Key": env.GOOGLE_MAPS_KEY };
+    let pid = await kv.get("gplace");
+    if (!pid) {
+      const r = await fetch("https://places.googleapis.com/v1/places:searchText", { method: "POST", headers: { ...H, "X-Goog-FieldMask": "places.id,places.formattedAddress" }, body: JSON.stringify({ textQuery: "Pizza & Baguettehaus am Königspalast, Westparkstraße 102, 47803 Krefeld", languageCode: "de", regionCode: "DE" }) });
+      if (!r.ok) return fail("suche-" + r.status);
+      const j = await r.json().catch(() => ({}));
+      const hit = (j.places || []).find((p) => /Westparkstra/i.test(p.formattedAddress || ""));
+      if (!hit) return fail("nicht-gefunden");
+      pid = hit.id;
+      await kv.put("gplace", pid);
+    }
+    const r2 = await fetch("https://places.googleapis.com/v1/places/" + encodeURIComponent(pid), { headers: { ...H, "X-Goog-FieldMask": "rating,userRatingCount,googleMapsUri" } });
+    if (!r2.ok) return fail("details-" + r2.status);
+    const d = await r2.json().catch(() => ({}));
+    if (typeof d.rating !== "number" || !d.userRatingCount) return fail("keine-bewertung");
+    await setJSON(kv, "rating", { score: String(d.rating), count: d.userRatingCount, source: "google", url: d.googleMapsUri || "", updated: Date.now() });
+    await kv.put("rtstatus", "ok");
+  } catch (e) {
+    await fail("ausnahme");
+  }
+}
+
 async function refreshEvents(env) {
   const all = new Map();
   const now = new Date();
@@ -618,7 +650,7 @@ export default {
   },
   // Cron: "0 */6 * * *" = 00:00, 06:00, 12:00, 18:00 UTC
   async scheduled(event, env, ctx) {
-    if (event.cron === "*/2 * * * *") ctx.waitUntil(runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))));
+    if (event.cron === "*/2 * * * *") ctx.waitUntil(Promise.all([runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))), refreshRating(env)]));
     else ctx.waitUntil(refreshEvents(env));
   },
 };
