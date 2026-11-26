@@ -272,6 +272,7 @@ dialog.full[open]{display:block}
   <label class="l" for="opt-note">Anmerkung (kostet nichts extra, z. B. „ohne Zwiebeln“)</label>
   <textarea id="opt-note" placeholder="Optional"></textarea>
   <div class="ot"><span>Preis</span><span id="opt-total"></span></div>
+  <div class="msg" id="opt-msg"></div>
   <div class="col">
     <button class="btn wa" id="opt-add">In den Warenkorb</button>
     <button class="btn ghost" id="opt-cancel">Abbrechen</button>
@@ -294,7 +295,7 @@ dialog.full[open]{display:block}
     <label><input type="radio" name="ctype" value="Abholung" checked><span>🏃 Abholung</span></label>
     <label><input type="radio" name="ctype" value="Lieferung"><span>🛵 Lieferung</span></label>
   </div>
-  <div id="c-addr-wrap" hidden><label class="l" for="c-addr">Lieferadresse *</label><input type="text" id="c-addr" placeholder="Straße, Hausnummer, Ort" autocomplete="street-address"></div>
+  <div id="c-addr-wrap" hidden><label class="l" id="c-addr-l" for="c-street">Lieferadresse *</label><input type="text" id="c-street" placeholder="Straße und Hausnummer" autocomplete="address-line1"><div style="display:flex;gap:8px"><input type="text" id="c-plz" placeholder="PLZ" inputmode="numeric" maxlength="5" autocomplete="postal-code" style="width:110px;flex:none"><input type="text" id="c-city" placeholder="Ort" value="Krefeld" autocomplete="address-level2" style="flex:1;min-width:0"></div><input type="hidden" id="c-addr"></div>
   <div class="legal" id="f-deliv" hidden>🛵 <b>Lieferung:</b> Die Lieferkosten richten sich nach der Fahrstrecke. Bis 1 km: Mindestbestellwert 20 €, keine Liefergebühr. 1 bis 3 km: Mindestbestellwert 25 €, Liefergebühr 1 €. 3 bis 5 km: Mindestbestellwert 30 €, Liefergebühr 2 €. Ab 5 km: Mindestbestellwert 35 €, Liefergebühr 3 €. Abholen ist günstiger.</div>
 <label class="l" for="c-time">Wunschzeit (optional)</label>
   <input type="text" id="c-time" placeholder="z. B. 12:30 Uhr oder „so schnell wie möglich“">
@@ -401,7 +402,7 @@ const MENU={
   ["Chicken","",[6],[7]],["Schinken","",[5.5],[6.5]],["Mozzarella & frische Tomaten","",[6],[7]],["Schinken + Ananas","",[6],[7]],["Chicken BBQ Sauce","",[6.5],[7.5]]]},
  baguette:{title:"Baguette",prefix:"Baguette ",pics:["stock-baguette"],opt:{sauce:2,tops:1,bake:1},items:[
   ["Thunfisch","",[5],[6]],["Salami","",[5],[6]],["Ei","",[5],[6]],["Gauda","",[5],[6]],["Mozzarella","",[5.5],[6.5]],["Schinken","",[5],[6]],
-  ["Sucuk","",[5.5],[6.5]],["Chicken","",[5.5],[6.5]],["Nuggets","",[5],[6]],["König","3 Beilagen",[8],[8]],["Veggie","",[5.5],[6.5]]]},
+  ["Sucuk","",[5.5],[6.5]],["Chicken","",[5.5],[6.5]],["Nuggets","",[5],[6]],["König","3 Zutaten nach Wahl inklusive (Überbacken zählt als Zutat)",[8],[8],{sauce:2,tops:1,bake:1,incl:3}],["Veggie","",[5.5],[6.5]]]},
  pommes:{title:"Pommes & Nuggets",pics:["stock-nuggets"],opt:{sauce:2},items:[
   ["Pommes klein","",[3],[3.5]],["Pommes groß","",[3.5],[4]],["Pomm Chicken","",[6],[7]],
   ["Pommes Spezial","Mit Curryketchup und Mayo",[6],[6],{sauce:0,fixed:["Curryketchup","Mayo"],pick:{label:"Zwiebeln",options:["Röstzwiebeln","Rote Zwiebeln"]}}],
@@ -433,9 +434,11 @@ function basePrice(k){const{s}=parse(k),it=itemOf(k),m=effMode(),o=PR[k]&&PR[k][
 function addon(a){const o=PR["addon|"+a+"|0"];return o&&typeof o.d==="number"?o.d:ADDON[a].p}
 function extras(k,sel){
   const o=optOf(k)||{};let t=0;
-  (sel.tops||[]).forEach(n=>{t+=addon(TOPS.find(x=>x[0]===n)[1])});
+  const ing=(sel.tops||[]).map(n=>addon(TOPS.find(x=>x[0]===n)[1]));
+  if(sel.bake)ing.push(addon("bake"));
+  if(o.incl){ing.sort((a,b)=>b-a);t+=ing.slice(0,Math.max(0,ing.length-o.incl)).reduce((a,b)=>a+b,0)}else t+=ing.reduce((a,b)=>a+b,0);
   t+=Math.max(0,(sel.sauces||[]).length-(o.sauce||0))*addon("sauce");
-  if(sel.bake)t+=addon("bake");return t;
+  return t;
 }
 const unit=l=>basePrice(l.key)+extras(l.key,l.sel||{});
 function lineName(k){const{c,s}=parse(k),C=MENU[c],it=itemOf(k),pre=C.prefix||"";
@@ -445,7 +448,8 @@ function summary(l){
   if(o.pick&&s.pick)r.push(`${o.pick.label}: ${s.pick}`);
   if(o.fixed)r.push("Inklusive: "+o.fixed.join(", "));
   if(s.sauces&&s.sauces.length)r.push("Soßen: "+s.sauces.join(", "));
-  if(s.tops&&s.tops.length)r.push("Extra: "+s.tops.join(", "));
+  if(s.noSauce)r.push("Keine Soße");
+  if(s.tops&&s.tops.length)r.push((o.incl?"Zutaten: ":"Extra: ")+s.tops.join(", "));
   if(s.bake)r.push("Überbacken");
   return r;
 }
@@ -516,22 +520,23 @@ function openOpt(k){
   let h="";
   if(o.fixed)h+=`<div class="og"><h4>Enthalten</h4><div class="hint">${o.fixed.join(", ")} sind automatisch dabei.</div></div>`;
   if(o.pick)h+=`<div class="og"><h4>${o.pick.label} wählen</h4><div class="opts">${o.pick.options.map((x,i)=>`<label><input type="radio" name="pick" value="${esc(x)}" ${i?"":"checked"}>${x}</label>`).join("")}</div></div>`;
-  if(o.sauce!==undefined)h+=`<div class="og"><h4>Soßen</h4><div class="hint">${o.sauce?`${o.sauce} Soßen sind inklusive, jede weitere kostet +${eur(addon("sauce"))}.`:`Jede zusätzliche Soße kostet +${eur(addon("sauce"))}.`}</div><div class="opts">${(o.sauces||SAUCES).map(x=>`<label><input type="checkbox" name="sauce" value="${esc(x)}">${x}</label>`).join("")}</div></div>`;
-  if(o.tops)h+=`<div class="og"><h4>Extra-Zutaten</h4><div class="hint">Fleisch, Thunfisch, Käse +${eur(addon("m"))} · sonstige +${eur(addon("o"))} pro Zutat.</div><div class="opts">${TOPS.map(x=>`<label><input type="checkbox" name="top" value="${esc(x[0])}">${x[0]} <small>+${eur(addon(x[1]))}</small></label>`).join("")}</div></div>`;
+  if(o.sauce!==undefined)h+=`<div class="og"><h4>Soßen</h4><div class="hint">${o.sauce?`${o.sauce} Soßen sind inklusive, jede weitere kostet +${eur(addon("sauce"))}.`:`Jede zusätzliche Soße kostet +${eur(addon("sauce"))}.`}</div><div class="opts"><label><input type="checkbox" name="nosauce">Keine Soße</label>${(o.sauces||SAUCES).map(x=>`<label><input type="checkbox" name="sauce" value="${esc(x)}">${x}</label>`).join("")}</div></div>`;
+  if(o.tops)h+=`<div class="og"><h4>${o.incl?"Zutaten (bitte "+o.incl+" wählen)":"Extra-Zutaten"}</h4><div class="hint">${o.incl?o.incl+" Zutaten sind inklusive, „Mit Käse überbacken“ zählt als Zutat. Ab der "+(o.incl+1)+". Zutat zahlst du für jede weitere Zutat den Preis der teuersten (Fleisch, Thunfisch, Käse +"+eur(addon("m"))+", sonstige +"+eur(addon("o"))+").":"Fleisch, Thunfisch, Käse +"+eur(addon("m"))+" · sonstige +"+eur(addon("o"))+" pro Zutat."}</div><div class="opts">${TOPS.map(x=>`<label><input type="checkbox" name="top" value="${esc(x[0])}">${x[0]} <small>+${eur(addon(x[1]))}</small></label>`).join("")}</div></div>`;
   if(o.bake)h+=`<div class="og"><h4>Überbacken</h4><div class="opts"><label><input type="checkbox" name="bake">Mit Käse überbacken <small>+${eur(addon("bake"))}</small></label></div></div>`;
-  $("opt-title").textContent=lineName(k);$("opt-body").innerHTML=h;$("opt-note").value="";
-  $("opt-body").querySelectorAll("input").forEach(i=>i.onchange=readOpt);readOpt();$("opt").showModal();
+  $("opt-title").textContent=lineName(k);$("opt-body").innerHTML=h;$("opt-note").value="";$("opt-msg").textContent="";
+  {const ob=$("opt-body");ob.querySelectorAll("input").forEach(i=>i.onchange=()=>{if(i.name==="nosauce"&&i.checked)ob.querySelectorAll("[name=sauce]").forEach(x=>x.checked=false);if(i.name==="sauce"&&i.checked){const nn=ob.querySelector("[name=nosauce]");if(nn)nn.checked=false}readOpt()})}readOpt();$("opt").showModal();
 }
 function readOpt(){
   const b=$("opt-body"),s=CUR.sel;
   s.sauces=[...b.querySelectorAll("[name=sauce]:checked")].map(x=>x.value);
+  const ns=b.querySelector("[name=nosauce]");s.noSauce=!!(ns&&ns.checked);
   s.tops=[...b.querySelectorAll("[name=top]:checked")].map(x=>x.value);
   const bk=b.querySelector("[name=bake]");s.bake=!!(bk&&bk.checked);
   const p=b.querySelector("[name=pick]:checked");if(p)s.pick=p.value;
   $("opt-total").textContent=eur(basePrice(CUR.key)+extras(CUR.key,s));
 }
 $("opt-cancel").onclick=()=>$("opt").close();
-$("opt-add").onclick=()=>{addLine({key:CUR.key,sel:CUR.sel,note:$("opt-note").value.trim()});$("opt").close()};
+$("opt-add").onclick=()=>{const o=optOf(CUR.key)||{};const n=(CUR.sel.tops||[]).length+(CUR.sel.bake?1:0);if(o.incl&&n<o.incl){$("opt-msg").textContent="Bitte wähle "+o.incl+" Zutaten aus („Überbacken“ zählt mit). Bisher: "+n+".";return}addLine({key:CUR.key,sel:CUR.sel,note:$("opt-note").value.trim()});$("opt").close()};
 
 /* ===== WARENKORB ===== */
 let CART=(store.get("cart4")||[]).filter(x=>{try{return !!itemOf(x.key)}catch(e){return false}});
@@ -573,7 +578,7 @@ $("cart-send").onclick=()=>{
   const msg=$("cart-msg"),name=$("c-name").value.trim(),type=document.querySelector("[name=ctype]:checked").value,addr=$("c-addr").value.trim();
   if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
   if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
-  if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();return}
+  if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-street").focus();return}
   const lines=CART.map(x=>`${x.qty}x ${lineName(x.key)} – ${eur(unit(x)*x.qty)}${summary(x).map(t=>`\n   ${t}`).join("")}${x.note?`\n   Anmerkung: ${x.note}`:""}`);
   const t=$("c-time").value.trim(),n=$("c-note").value.trim();
   const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}${type==="Lieferung"&&window.ROUTE?`\nLiefergebühr: ${eur(window.ROUTE.fee)} (${String(window.ROUTE.km).replace(".",",")} km Fahrstrecke)\nGesamt: ${eur(total()+window.ROUTE.fee)}`:""}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t:""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
@@ -742,7 +747,7 @@ function upd(){
 const lief=FULFIL==="Lieferung",R=window.ROUTE;
 box.hidden=!(lief&&CFG.route);$("f-deliv").hidden=!lief||(CFG.route&&!!R);
 if(lief&&CFG.route){box.innerHTML=R?`🛵 Fahrstrecke: <b>${String(R.km).replace(".",",")} km</b> · Liefergebühr: <b>${eur(R.fee)}</b> · Mindestbestellwert: <b>${R.min} €</b>`+(total()<R.min?`<br>⚠️ Dir fehlen noch <b>${eur(R.min-total())}</b> bis zum Mindestbestellwert.<br><button type="button" class="btn ghost" id="tip-btn" style="margin-top:8px;font-size:.85rem;padding:8px 14px">${window.TIPON?"✅ Fehlbetrag wird als Trinkgeld aufgefüllt (zum Ändern antippen)":"💶 Trotzdem bestellen: Fehlbetrag als Trinkgeld auffüllen"}</button>`:""):(box.dataset.state==="busy"?"Berechne Fahrstrecke …":(box.dataset.err||"Bitte gib deine vollständige Lieferadresse an. Die Lieferkosten werden nach der Fahrstrecke berechnet."))}
-rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div>${tipAmt()>0?`<div class="sum"><span>Trinkgeld (Auffüllung)</span><span>${eur(tipAmt())}</span></div>`:""}<div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee+tipAmt())}</span></div>`:"";
+rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div>${tipAmt()>0?`<div class="sum"><span>Trinkgeld (Auffüllung, ohne MwSt.)</span><span>${eur(tipAmt())}</span></div>`:""}<div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee+tipAmt())}</span></div>`:"";
 }
 async function calc(){
 const a=addr.value.trim();window.ROUTE=null;box.dataset.err="";
@@ -776,7 +781,7 @@ fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{PAY
 const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0)+tipAmt();
 function updPay(){
 $("c-phone").hidden=$("c-phone-l").hidden=!PAY;$("c-mail").hidden=$("c-mail-l").hidden=!(PAY&&FULFIL==="Lieferung");box.hidden=!PAY||!CART.length;if(box.hidden)return;
-if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("inv-mail-wrap").hidden=!(INV&&invOn);$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?"✅ Rechnung angefordert (nur bei Online-Zahlung)":"🧾 Rechnung anfordern (nur bei Online-Zahlung)";
+if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("inv-mail-wrap").hidden=!(INV&&invOn&&FULFIL!=="Lieferung");$("c-addr-wrap").hidden=!(FULFIL==="Lieferung"||(INV&&invOn));$("c-addr-l").textContent=FULFIL==="Lieferung"?"Lieferadresse *":"Rechnungsadresse *";$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?(FULFIL==="Lieferung"?"✅ Rechnung angefordert (geht an deine E-Mail oben)":"✅ Rechnung angefordert (nur bei Online-Zahlung)"):"🧾 Rechnung anfordern (nur bei Online-Zahlung)";
 const st=computeStatus(),ok=st.s==="open"||st.s==="event";
 btn.disabled=$("cart-cash").disabled=!ok;
 const h=ok?`<b>Online bezahlen (Apple Pay, Karte u. a.):</b> Gesamtpreis inkl. MwSt. (Speisen 7 %, Getränke 19 %): <b>${eur(grand())}</b>${FULFIL==="Lieferung"&&window.ROUTE?` (inkl. ${eur(window.ROUTE.fee)} Liefergebühr)`:""}. Mit Klick auf „Zahlungspflichtig bestellen“ gibst du eine verbindliche Bestellung ab und wirst zu Stripe weitergeleitet. Alternativ kannst du bei Abholung oder Lieferung bar oder mit Karte bezahlen (zweiter Knopf). Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht. Kann deine Bestellung nicht ausgeführt werden, erstatten wir dir den Betrag.`:`Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;
@@ -793,20 +798,21 @@ const phone=$("c-phone").value.trim();if(phone.replace(/\D/g,"").length<8){msg.t
 const mail=$("c-mail").value.trim();const okm=s=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
 if(lief&&!okm(mail)){msg.textContent="Bitte gib deine E-Mail-Adresse an, damit wir dir die voraussichtliche Lieferzeit schicken können.";$("c-mail").focus();return}
 const invMail=$("c-inv").value.trim()||mail;
+if(invOn&&mode==="online"&&!lief&&!$("c-addr").value){msg.textContent="Bitte gib deine vollständige Rechnungsadresse an (Straße mit Hausnummer, PLZ und Ort).";$("c-street").focus();return}
 if(invOn&&mode==="vorort"){msg.textContent="Eine Rechnung gibt es nur bei Online-Zahlung. Wähle „online bezahlen“ oder schalte die Rechnung aus.";return}
 if(invOn&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(invMail)){msg.textContent="Bitte gib eine gültige E-Mail-Adresse für die Rechnung an.";$("c-inv").focus();return}
 if(lief){
-if(!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-addr").focus();return}
+if(!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-street").focus();return}
 if(!R||R.addr!==addr){msg.textContent="Bitte kurz warten, bis die Fahrstrecke für deine Adresse berechnet ist.";return}
 if(total()<R.min&&!window.TIPON){msg.textContent="Der Mindestbestellwert für deine Lieferadresse beträgt "+R.min+" €. Dir fehlen noch "+eur(R.min-total())+". Du kannst den Fehlbetrag auch als Trinkgeld auffüllen.";return}
 }
 btn.disabled=$("cart-cash").disabled=true;msg.textContent=mode==="vorort"?"Einen Moment, deine Bestellung wird gesendet …":"Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
 try{
-const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:lief?mail:"",tipFill:tipAmt()>0,invoiceEmail:invOn&&mode==="online"?invMail:"",fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
+const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:lief?mail:"",tipFill:tipAmt()>0,billAddr:invOn&&!lief&&mode==="online"?$("c-addr").value:"",invoiceEmail:invOn&&mode==="online"?invMail:"",fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.url){location.href=j.url;return}
 if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").textContent="Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.";$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
-msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",email:"Bitte gib eine gültige E-Mail-Adresse für die Rechnung an.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
+msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",email:"Bitte gib eine gültige E-Mail-Adresse an.",billaddr:"Die Rechnungsadresse wurde nicht gefunden. Bitte prüfe Straße, Hausnummer, PLZ und Ort.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
 }catch(e){msg.textContent="Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an."}
 btn.disabled=false;updPay();
 };
@@ -821,5 +827,9 @@ $("paid-ok").onclick=()=>d.close();d.showModal();
 }
 setInterval(()=>{if(odlg.open)loadOrders()},20000);
 })();
+</script><script>
+(()=>{const st=$("c-street"),pz=$("c-plz"),ct=$("c-city"),hid=$("c-addr");
+const comp=()=>{const s=st.value.trim(),p=pz.value.trim(),c=ct.value.trim();const ok=/\d/.test(s)&&/^\d{5}$/.test(p)&&c.length>1;const v=ok?s+", "+p+" "+c:"";if(hid.value!==v){hid.value=v;hid.dispatchEvent(new Event("input"))}};
+[st,pz,ct].forEach(x=>x.addEventListener("input",comp));})();
 </script></body>
 </html>
