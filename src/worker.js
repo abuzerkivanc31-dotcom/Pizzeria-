@@ -53,7 +53,11 @@ async function checkAddr(env, addr) {
   const plz = (a.match(/\b(\d{5})\b/) || [])[1] || "";
   const num = (a.match(/(\d+\s*[a-zA-Z]?)\s*,/) || [])[1] || "";
   if (!plz || !num || !env.GOOGLE_MAPS_KEY) return { error: "addr" };
-  const key = "av:" + (await shortHash(a.toLowerCase()));
+  // Straßenname muss zum gefundenen Treffer passen (sonst nimmt Google eine ähnliche Straße)
+  const sn = (s) => String(s || "").toLowerCase().replace(/ß/g, "ss").replace(/strasse|str\./g, "str").replace(/[^a-z0-9äöü]/g, "");
+  const sIn = sn((a.match(/^(.*?)\s*\d/) || [])[1]);
+  if (sIn.length < 3) return { error: "addr" };
+  const key = "av2:" + (await shortHash(a.toLowerCase()));
   if ((await env.DATA.get(key)) === "ok") return { ok: true };
   const r = await fetch("https://places.googleapis.com/v1/places:searchText", { method: "POST", headers: { "content-type": "application/json", "X-Goog-Api-Key": env.GOOGLE_MAPS_KEY, "X-Goog-FieldMask": "places.addressComponents,places.formattedAddress" }, body: JSON.stringify({ textQuery: a, languageCode: "de", regionCode: "DE" }) });
   if (!r.ok) return { error: "upstream" };
@@ -62,7 +66,8 @@ async function checkAddr(env, addr) {
   const p = (j.places || []).find((x) => {
     const c = x.addressComponents || [];
     const get = (t) => (c.find((k) => (k.types || []).includes(t)) || {}).longText || "";
-    return get("postal_code") === plz && norm(get("street_number")) === norm(num) && !!get("route");
+    const rt = sn(get("route"));
+    return get("postal_code") === plz && norm(get("street_number")) === norm(num) && !!rt && (rt === sIn || rt.startsWith(sIn) || sIn.startsWith(rt));
   });
   if (!p) return { error: "addr" };
   await env.DATA.put(key, "ok", { expirationTtl: 30 * 86400 });
