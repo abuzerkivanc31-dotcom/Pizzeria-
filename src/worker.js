@@ -177,7 +177,7 @@ function priceCart(menu, PR, mode, cart) {
     if (sauces.length) det.push("Soßen: " + sauces.join(", "));
     if (tops.length) det.push("Extra: " + tops.join(", "));
     if (sel.bake) det.push("Überbacken");
-    out.push({ name, det, note: str(l.note, 200), qty, unit, cat: c });
+    out.push({ name, det, note: str(l.note, 200), qty, unit, cat: c, desc: String(it[1] || "") });
   }
   return { lines: out, sum: Math.round(out.reduce((a, x) => a + x.unit * x.qty, 0) * 100) / 100 };
 }
@@ -249,7 +249,7 @@ async function handleCheckout(b, req, env) {
     await notifyTelegram(env, rec);
     return json({ ok: true });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -689,7 +689,7 @@ function buildInvoicePdf(rec) {
   };
   const L = 56, R = 539;
   const no = rec.invNo || "O-0000", inDate = rec.invDate || rec.paidAt || rec.t;
-  const rows = (rec.items && rec.items.length ? rec.items : [{ name: "Online-Bestellung (Details siehe Zahlungsbeleg)", det: [], qty: 1, unit: (rec.amount || 0) / 100 - (rec.fee || 0), cat: "" }]).map((x) => ({ name: x.name, det: (x.det || []).concat(x.note ? ["Anmerkung: " + x.note] : []), qty: x.qty, unitC: Math.round(x.unit * 100), rate: invRate(x) }));
+  const rows = (rec.items && rec.items.length ? rec.items : [{ name: "Online-Bestellung (Details siehe Zahlungsbeleg)", det: [], qty: 1, unit: (rec.amount || 0) / 100 - (rec.fee || 0), cat: "" }]).map((x) => ({ name: x.name, det: (x.desc && /pfand/i.test(x.desc) ? [x.desc.charAt(0).toUpperCase() + x.desc.slice(1)] : []).concat(x.det || []).concat(x.note ? ["Anmerkung: " + x.note] : []), qty: x.qty, unitC: Math.round(x.unit * 100), rate: invRate(x) }));
   const gross = { 7: 0, 19: 0 };
   rows.forEach((r) => { r.totC = r.unitC * r.qty; gross[r.rate] += r.totC; });
   const feeC = Math.round((rec.fee || 0) * 100);
