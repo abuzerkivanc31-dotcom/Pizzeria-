@@ -108,10 +108,52 @@ async function shortHash(s) {
   return [...new Uint8Array(d)].slice(0, 8).map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-async function saveOrder(b, req, kv) {
+const okMail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(s || ""));
+// Fortlaufende Bestellnummer (1, 2, 3 ...), dazu ein Verweis Nummer -> Bestellung
+async function setOrderNo(kv, rec) {
+  if (rec.no) return rec.no;
+  const n = (Number(await kv.get("ordseq")) || 0) + 1;
+  await kv.put("ordseq", String(n));
+  rec.no = n;
+  await kv.put("on:" + n, rec.id, { expirationTtl: ORDER_TTL_S });
+  return n;
+}
+// Wunschzeit: leer (= so schnell wie möglich) oder "HH:MM" heute, innerhalb der Öffnungszeiten (gleiche Regeln wie die Seite)
+async function checkWish(env, t) {
+  t = String(t || "").trim();
+  if (!t) return { ok: true, time: "" };
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m || Number(m[2]) > 59) return { error: "time" };
+  const tm = Number(m[1]) * 60 + Number(m[2]);
+  if (tm >= 1440) return { error: "time" };
+  const now = Date.now(), bn = berlinNow(), today = berlinDate(now);
+  if (tm < bn.m - 5) return { error: "time" };
+  const st = await getJSON(env.DATA, "status");
+  const win = [];
+  if (st && st.state && st.expires > now) { if (st.state === "closed") return { error: "time" }; win.push([0, 1440]); }
+  if (bn.dow >= 1 && bn.dow <= 5) win.push([450, 930]);
+  let evs = ((await getJSON(env.DATA, "events")) || {}).events || [];
+  if (!evs.length) { try { evs = (await (await env.ASSETS.fetch(new URL("/events.json", "https://pizzeria-koenigspalast.de"))).json()).events || []; } catch (e) { evs = []; } }
+  for (const e of evs) if (e.date === today && /^\d{1,2}:\d{2}$/.test(e.open || "")) { const [h, mi] = e.open.split(":").map(Number); win.push([h * 60 + mi, 1440]); }
+  if (!win.some((x) => tm >= x[0] && tm < x[1])) return { error: "time" };
+  return { ok: true, time: m[1].padStart(2, "0") + ":" + m[2] };
+}
+const addrPartsOf = (b) => { const a = b && b.addrParts && typeof b.addrParts === "object" ? b.addrParts : {}; return { street: str(a.street, 100), hnr: str(a.hnr, 12), plz: str(a.plz, 5), city: str(a.city, 60) }; };
+const cartOf = (c) => {
+  if (!Array.isArray(c) || !c.length) return null;
+  const o = c.slice(0, 40).map((l) => ({ key: String((l && l.key) || "").slice(0, 30), sel: l && l.sel && typeof l.sel === "object" ? l.sel : {}, note: str(l && l.note, 200), qty: Math.max(1, Math.min(30, Math.floor(Number(l && l.qty)) || 1)) }));
+  return JSON.stringify(o).length < 20000 ? o : null;
+};
+
+async function saveOrder(b, req, env) {
+  const kv = env.DATA;
   const name = str(b.name, 80);
   const lines = Array.isArray(b.lines) ? b.lines.slice(0, 40).map((l) => str(l, 400)).filter(Boolean) : [];
   if (!name || !lines.length) return json({ error: "invalid" }, 400);
+  const email = str(b.email, 120);
+  if (!okMail(email)) return json({ error: "email" }, 400);
+  const wt = await checkWish(env, b.time);
+  if (wt.error) return json({ error: "time" }, 400);
   // Missbrauchsschutz: gekürzter Prüfwert der IP-Adresse, nur für das Zählen
   const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
   const rlKey = `rl:${ipHash}:${Math.floor(Date.now() / 600000)}`;
@@ -119,21 +161,97 @@ async function saveOrder(b, req, kv) {
   if (count >= ORDER_LIMIT) return json({ error: "limit" }, 429);
   await kv.put(rlKey, String(count + 1), { expirationTtl: 1200 });
   const t = Date.now();
-  const id = `${t}:${Math.random().toString(36).slice(2, 8)}`;
-  await setJSON(kv, `o:${id}`, {
+  const id = t + ":" + Math.random().toString(36).slice(2, 8);
+  const lief = b.type === "Lieferung";
+  const rec = {
     id,
     t,
     name,
-    type: b.type === "Lieferung" ? "Lieferung" : "Abholung",
-    addr: b.type === "Lieferung" ? str(b.addr, 200) : "",
-    time: str(b.time, 100),
+    type: lief ? "Lieferung" : "Abholung",
+    addr: lief ? str(b.addr, 200) : "",
+    time: wt.time,
     note: str(b.note, 500),
     lines,
     total: Math.max(0, Math.min(5000, Number(b.total) || 0)),
     fee: Math.max(0, Math.min(20, Number(b.fee) || 0)),
     km: Math.max(0, Math.min(500, Number(b.km) || 0)),
-  }, { expirationTtl: ORDER_TTL_S });
-  return json({ ok: true });
+    email,
+    phone: str(String(b.phone || "").replace(/[^\d+ ]/g, ""), 20),
+    pay: "wa",
+  };
+  await setOrderNo(kv, rec);
+  await setJSON(kv, "o:" + id, rec, { expirationTtl: ORDER_TTL_S });
+  await sendConfirm(env, rec);
+  await saveAcctFromOrder(env, b.token, { name, phone: rec.phone, ...(lief ? addrPartsOf(b) : {}), fulfil: rec.type, cart: cartOf(b.cart) });
+  return json({ ok: true, no: rec.no });
+}
+
+// ---------- Kundenkonto: Anmeldung per E-Mail-Code (ohne Passwort) ----------
+// Gespeichert: E-Mail, Name, Telefon, Adresse, letzte Bestellung. Löschung per Knopf oder nach 2 Jahren ohne Nutzung.
+const ACC_TTL = 730 * 86400, SESS_TTL = 180 * 86400;
+const accKey = async (email) => "acc:" + (await shortHash("acc:" + String(email).trim().toLowerCase()));
+const rndHex = (n) => [...crypto.getRandomValues(new Uint8Array(n))].map((x) => x.toString(16).padStart(2, "0")).join("");
+async function acctFromToken(env, token) {
+  if (typeof token !== "string" || !/^[a-f0-9]{48}$/.test(token)) return null;
+  const k = await env.DATA.get("asess:" + token);
+  if (!k) return null;
+  const p = await getJSON(env.DATA, k);
+  return p ? { key: k, p } : null;
+}
+async function saveAcctFromOrder(env, token, d) {
+  try {
+    if (!token) return;
+    const a = await acctFromToken(env, token);
+    if (!a) return;
+    const p = a.p;
+    for (const f of ["name", "phone", "street", "hnr", "plz", "city"]) if (d[f]) p[f] = d[f];
+    if (d.fulfil) p.fulfil = d.fulfil;
+    if (d.cart) p.last = { t: Date.now(), fulfil: d.fulfil, cart: d.cart };
+    await setJSON(env.DATA, a.key, p, { expirationTtl: ACC_TTL });
+  } catch (e) {}
+}
+const pubProfile = (p) => ({ email: p.email, name: p.name || "", phone: p.phone || "", street: p.street || "", hnr: p.hnr || "", plz: p.plz || "", city: p.city || "", fulfil: p.fulfil || "", last: p.last || null });
+async function handleAcct(path, b, req, env) {
+  const kv = env.DATA;
+  if (path === "/acct/code") {
+    if (!env.RESEND_API_KEY) return json({ error: "nomail" }, 503);
+    const email = str(b.email, 120);
+    if (!okMail(email)) return json({ error: "email" }, 400);
+    const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
+    const rlKey = "acr:" + ipHash + ":" + Math.floor(Date.now() / 600000);
+    const cnt = Number((await kv.get(rlKey)) || 0);
+    if (cnt >= 6) return json({ error: "limit" }, 429);
+    await kv.put(rlKey, String(cnt + 1), { expirationTtl: 1200 });
+    const ck = "acode:" + (await accKey(email)).slice(4);
+    const old = await getJSON(kv, ck);
+    if (old && Date.now() - old.at < 60000) return json({ error: "wait" }, 429);
+    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+    await setJSON(kv, ck, { code, at: Date.now(), tries: 0 }, { expirationTtl: 900 });
+    const ok = await sendMail(env, email, "Dein Anmeldecode: " + code, "Hallo,\n\ndein Anmeldecode für pizzeria-koenigspalast.de lautet:\n\n" + code + "\n\nDer Code gilt 15 Minuten. Wenn du dich nicht anmelden wolltest, kannst du diese E-Mail einfach ignorieren.\n\nPizza & Baguettehaus am Königspalast");
+    return ok ? json({ ok: true }) : json({ error: "send" }, 502);
+  }
+  if (path === "/acct/verify") {
+    const email = str(b.email, 120);
+    const code = String(b.code || "").replace(/\D/g, "");
+    if (!okMail(email) || code.length !== 6) return json({ error: "code" }, 400);
+    const k = await accKey(email), ck = "acode:" + k.slice(4);
+    const c = await getJSON(kv, ck);
+    if (!c || c.tries >= 5) return json({ error: "expired" }, 400);
+    if (!same(code, c.code)) { c.tries++; await setJSON(kv, ck, c, { expirationTtl: 900 }); await sleep(500); return json({ error: "code" }, 400); }
+    await kv.delete(ck);
+    const p = (await getJSON(kv, k)) || { created: Date.now() };
+    p.email = email;
+    await setJSON(kv, k, p, { expirationTtl: ACC_TTL });
+    const token = rndHex(24);
+    await kv.put("asess:" + token, k, { expirationTtl: SESS_TTL });
+    return json({ token, profile: pubProfile(p) });
+  }
+  const a = await acctFromToken(env, b.token);
+  if (!a) return json({ error: "auth" }, 401);
+  if (path === "/acct/me") return json({ profile: pubProfile(a.p) });
+  if (path === "/acct/logout") { await kv.delete("asess:" + b.token); return json({ ok: true }); }
+  if (path === "/acct/delete") { await kv.delete(a.key); await kv.delete("asess:" + b.token); return json({ ok: true }); }
+  return json({ error: "not found" }, 404);
 }
 
 async function listOrders(kv) {
@@ -248,16 +366,16 @@ async function handleCheckout(b, req, env) {
   const phoneDigits = phoneRaw.replace(/\D/g, "");
   if (phoneDigits.length < 8 || phoneDigits.length > 15) return json({ error: "phone" }, 400);
   const phone = phoneRaw.slice(0, 20);
-  const invRaw = String(b.invoiceEmail || "").trim().slice(0, 120);
-  const invEmail = !vorOrt && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(invRaw) ? invRaw : "";
-  if (invRaw && !vorOrt && !invEmail) return json({ error: "email" }, 400);
-  const mailRaw = String(b.email || "").trim().slice(0, 120);
-  const mail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mailRaw) ? mailRaw : "";
-  if (lief && !mail) return json({ error: "email" }, 400);
+  const mailRaw = str(b.email, 120);
+  const mail = okMail(mailRaw) ? mailRaw : "";
+  if (!mail) return json({ error: "email" }, 400);
+  const invEmail = b.invoice || b.invoiceEmail ? mail : ""; // Rechnung geht an die Bestell-E-Mail (auch bei Zahlung vor Ort, dann nach Bezahlung)
   const addr = lief ? str(b.addr, 200) : "";
   if (lief && addr.length < 6) return json({ error: "addr" }, 400);
   const billAddr = !lief && invEmail ? str(b.billAddr, 200) : "";
   if (!lief && invEmail) { const v0 = await checkAddr(env, billAddr); if (v0.error) return json({ error: "billaddr" }, 422); }
+  const wt = await checkWish(env, b.time);
+  if (wt.error) return json({ error: "time" }, 400);
   // Preise serverseitig nachrechnen
   const menu = await (await env.ASSETS.fetch(new URL("/menu.json", req.url))).json();
   const PRd = await getJSON(kv, "prices");
@@ -266,6 +384,7 @@ async function handleCheckout(b, req, env) {
   const mode = lief ? "e" : pm && pm.until > Date.now() && (pm.mode === "d" || pm.mode === "e") ? pm.mode : autoMode();
   const priced = priceCart(menu, PR, mode, b.cart);
   if (priced.error) return json({ error: "cart" }, 400);
+  const acctData = { name, phone, ...(lief || invEmail ? addrPartsOf(b) : {}), fulfil: lief ? "Lieferung" : "Abholung", cart: cartOf(b.cart) };
   let fee = 0, km = 0, tip = 0, driveMin = 0;
   if (lief) {
     if (!env.GOOGLE_MAPS_KEY) return json({ error: "route" }, 503);
@@ -292,20 +411,22 @@ async function handleCheckout(b, req, env) {
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
   if (vorOrt) {
-    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
+    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, invEmail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
+    await setOrderNo(kv, rec);
     await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
     await addLedger(env, rec);
     await notifyTelegram(env, rec);
-    await sendEta(env, rec);
-    return json({ ok: true });
+    await sendConfirm(env, rec);
+    await saveAcctFromOrder(env, b.token, acctData);
+    return json({ ok: true, no: rec.no });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: str(b.time, 100), note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
   p.set("mode", "payment");
   p.set("locale", "de");
-  p.set("success_url", origin + "/?bezahlt=1");
+  p.set("success_url", origin + "/?bezahlt=1&o=" + encodeURIComponent(id));
   p.set("cancel_url", origin + "/?bezahlt=0");
   p.set("client_reference_id", id.replace(":", "-"));
   p.set("metadata[order_id]", id);
@@ -330,6 +451,7 @@ async function handleCheckout(b, req, env) {
     await kv.delete(`p:${id}`);
     return json({ error: "stripe" }, 502);
   }
+  await saveAcctFromOrder(env, b.token, acctData);
   return json({ url: r.j.url });
 }
 async function verifyStripe(raw, header, secret) {
@@ -361,18 +483,20 @@ async function notifyTelegram(env, rec) {
     const eurS = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
     const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0) + (rec.tip || 0);
     const text = [
-      rec.paid ? "🍕 Neue bezahlte Bestellung" : "🍕 Neue Bestellung: Zahlung vor Ort (noch NICHT bezahlt)",
+      (rec.paid ? "🍕 Neue bezahlte Bestellung" : "🍕 Neue Bestellung: Zahlung vor Ort (noch NICHT bezahlt)") + (rec.no ? " · Nr. " + rec.no : ""),
       "",
       "Name: " + rec.name,
       rec.type === "Lieferung" ? "Lieferung an: " + rec.addr + (rec.km ? " (" + rec.km + " km)" : "") : "Abholung",
       rec.time ? "Wunschzeit: " + rec.time : "",
       rec.phone ? "Telefon: " + rec.phone : "",
+      rec.email ? "E-Mail: " + rec.email : "",
       "",
       ...(rec.lines || []),
       rec.tip ? "Trinkgeld (Aufrundung auf Mindestbestellwert): " + eurS(rec.tip) : "",
       rec.note ? "\nAnmerkung: " + rec.note : "",
       "",
       (rec.paid ? "Gesamt bezahlt: " : "Zu zahlen bei Abholung/Lieferung (bar oder Karte): ") + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
+      !rec.paid && rec.invEmail && rec.no ? "\n🧾 Rechnung angefordert. Sobald bezahlt ist, hier „" + rec.no + " bezahlt“ schreiben, dann geht die Rechnung an den Kunden." : "",
     ].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i > 0)).join("\n").slice(0, 4000);
     // Mehrere Empfänger: TELEGRAM_CHAT_ID darf eine Liste sein (Komma getrennt)
     const ids = String(chat).split(/[\s,;]+/).filter(Boolean);
@@ -409,6 +533,7 @@ async function handleStripeWebhook(req, env) {
       const rec = pend
         ? { ...pend, paid: true, paidAt: Date.now(), amount: s.amount_total, phone: pend.phone || phone }
         : { id, t: Date.now(), name: str((s.customer_details && s.customer_details.name) || "Unbekannt", 80), type: "Abholung", addr: "", time: "", note: "Bestelldetails fehlen, bitte in Stripe prüfen", lines: ["(Bezahlte Bestellung, Details siehe Stripe)"], total: (s.amount_total || 0) / 100, fee: 0, km: 0, paid: true, paidAt: Date.now(), phone };
+      await setOrderNo(kv, rec);
       await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
       if (pend) await kv.delete(`p:${id}`);
       if ((await notifyTelegram(env, rec)) === "ok") { rec.tgDone = true; await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S }); }
@@ -419,7 +544,7 @@ async function handleStripeWebhook(req, env) {
     if (id && s.payment_status === "paid") {
       await sendInvoice(env, await getJSON(kv, "o:" + id));
       await addLedger(env, await getJSON(kv, "o:" + id));
-      await sendEta(env, await getJSON(kv, "o:" + id));
+      await sendConfirm(env, await getJSON(kv, "o:" + id));
     }
   }
   return json({ received: true });
@@ -439,7 +564,13 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, iv: (await kv.get("invstatus")) || "-" });
+    if (path === "/ordno") {
+      const oid = new URL(req.url).searchParams.get("id") || "";
+      if (!/^\d+:[a-z0-9]+$/.test(oid)) return json({}, 400);
+      const o = await getJSON(kv, "o:" + oid);
+      return json(o ? { no: o.no || null, paid: !!o.paid } : {});
+    }
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.RESEND_API_KEY, iv: (await kv.get("invstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
@@ -448,7 +579,8 @@ async function handleApi(req, env) {
     let b = {};
     try { b = await req.json(); } catch (e) {}
 
-    if (path === "/orders") return saveOrder(b, req, kv); // öffentlich (WhatsApp-Anfragen)
+    if (path === "/orders") return saveOrder(b, req, env); // öffentlich (WhatsApp-Anfragen)
+    if (path.startsWith("/acct/")) return handleAcct(path, b, req, env); // Kundenkonto
     if (path === "/route") return handleRoute(b, req, env); // öffentlich, begrenzt
     if (path === "/checkout") return handleCheckout(b, req, env); // öffentlich, begrenzt
 
@@ -575,31 +707,60 @@ async function tgRecipients(env) {
   const raw = env.TELEGRAM_CHAT_ID || (await env.DATA.get("tgchat")) || "";
   return String(raw).split(/[\s,;]+/).filter(Boolean);
 }
-async function tgPoll(env, kv, ids, pend) {
+// Holt neue Telegram-Nachrichten: "12 bezahlt" markiert Bestellung 12 als bezahlt (Rechnung geht raus), Ja/Nein für die Rückfrage
+async function tgUpdates(env, kv, ids) {
   const off = Number(await kv.get("tgoff")) || 0;
   const r = await tgApi(env, "getUpdates", off ? { offset: off } : {});
   const list = (r && r.result) || [];
-  let ans = null, maxId = off - 1;
+  const out = [];
+  let maxId = off - 1;
   for (const u of list) {
     maxId = Math.max(maxId, u.update_id);
-    if (u.callback_query) {
-      const cq = u.callback_query, from = String(cq.message && cq.message.chat && cq.message.chat.id);
-      const parts = String(cq.data || "").split(":");
-      await tgApi(env, "answerCallbackQuery", { callback_query_id: cq.id });
-      if (ids.includes(from) && parts[1] === pend.id && (parts[0] === "ja" || parts[0] === "nein")) ans = parts[0];
-    } else if (u.message && u.message.text && ids.includes(String(u.message.chat.id)) && u.message.date * 1000 >= pend.at - 5000) {
-      const tx = u.message.text.trim().toLowerCase().replace(/[^a-zäöü]/g, "");
-      if (tx === "ja" || tx === "nein") ans = tx;
-    }
+    try {
+      if (u.callback_query) {
+        const cq = u.callback_query, from = String(cq.message && cq.message.chat && cq.message.chat.id);
+        const parts = String(cq.data || "").split(":");
+        await tgApi(env, "answerCallbackQuery", { callback_query_id: cq.id });
+        if (ids.includes(from) && (parts[0] === "ja" || parts[0] === "nein")) out.push({ ans: parts[0], id: parts[1] });
+      } else if (u.message && u.message.text && ids.includes(String(u.message.chat.id))) {
+        const raw = u.message.text.trim().toLowerCase();
+        const pm = raw.match(/^(?:nr\.?\s*|#)?(\d{1,6})\s*(?:ist\s+)?bezahlt[.!]?$/) || raw.match(/^bezahlt:?\s*(?:nr\.?\s*|#)?(\d{1,6})[.!]?$/);
+        if (pm) { await markPaid(env, Number(pm[1]), String(u.message.chat.id)); continue; }
+        const tx = raw.replace(/[^a-zäöü]/g, "");
+        if (tx === "ja" || tx === "nein") out.push({ ans: tx, at: u.message.date * 1000 });
+      }
+    } catch (e) {}
   }
   if (list.length) await kv.put("tgoff", String(maxId + 1));
-  return ans;
+  return out;
+}
+// Vor-Ort-Bestellung als bezahlt markieren und Rechnung verschicken (an die Geschäftsmail, bei Anforderung auch an den Kunden)
+async function markPaid(env, no, chat) {
+  const kv = env.DATA;
+  const reply = (t) => tgApi(env, "sendMessage", { chat_id: chat, text: t });
+  try {
+    const id = await kv.get("on:" + no);
+    const rec = id && (await getJSON(kv, "o:" + id));
+    if (!rec) return reply("❓ Bestellung Nr. " + no + " wurde nicht gefunden (Bestellungen werden nach 30 Tagen gelöscht).");
+    if (rec.paid) return reply("ℹ️ Bestellung Nr. " + no + " (" + rec.name + ") wurde schon online bezahlt. Die Rechnung ist bereits verschickt.");
+    if (rec.pay !== "vorort") return reply("ℹ️ Nr. " + no + " ist eine WhatsApp-Anfrage. Dafür kann keine Rechnung erstellt werden.");
+    if (rec.cashPaid) return reply("ℹ️ Bestellung Nr. " + no + " ist schon als bezahlt markiert" + (rec.invNo ? " (Rechnung " + rec.invNo + ")." : "."));
+    rec.cashPaid = true;
+    rec.paidAt = Date.now();
+    await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
+    await sendInvoice(env, rec);
+    await addLedger(env, rec);
+    return reply("✅ Bestellung Nr. " + no + " (" + rec.name + ") ist als bezahlt markiert." + (rec.invNo ? "\n🧾 Rechnung " + rec.invNo + (rec.invEmail ? (rec.invCust ? " wurde an " + rec.invEmail + " geschickt." : " konnte NICHT an " + rec.invEmail + " geschickt werden.") : " ging an die Geschäftsmail (der Kunde hat keine Rechnung angefordert).") : "\n⚠️ Die Rechnung konnte nicht erstellt werden."));
+  } catch (e) {
+    return reply("⚠️ Fehler beim Markieren von Nr. " + no + ".");
+  }
 }
 async function runAsk(env) {
   if (!env.TELEGRAM_BOT_TOKEN) return;
   const kv = env.DATA, now = Date.now();
   const ids = await tgRecipients(env);
   if (!ids.length) return;
+  const ups = await tgUpdates(env, kv, ids);
   let evs = ((await getJSON(kv, "events")) || {}).events || [];
   if (!evs.length) {
     try { evs = (await (await env.ASSETS.fetch(new URL("/events.json", "https://pizzeria-koenigspalast.de"))).json()).events || []; } catch (e) { evs = []; }
@@ -618,7 +779,8 @@ async function runAsk(env) {
   if (!st) return;
   const owner = ids[0];
   if (st.pend) {
-    const ans = await tgPoll(env, kv, ids, st.pend);
+    const hit = ups.filter((u) => (u.id && u.id === st.pend.id) || (u.at && u.at >= st.pend.at - 5000)).pop();
+    const ans = hit ? hit.ans : null;
     if (ans === "ja") {
       await setJSON(kv, "status", { state: "open", set: now, expires: st.next + ASK_TIMEOUT_MS + 300000 });
       st.pend = null;
@@ -632,9 +794,6 @@ async function runAsk(env) {
     const cur = await getJSON(kv, "status");
     if (cur && cur.state === "closed" && cur.expires > now) st.done = true;
     else {
-      const dr = await tgApi(env, "getUpdates", { offset: -1 });
-      const last = ((dr && dr.result) || [])[0];
-      if (last) await kv.put("tgoff", String(last.update_id + 1));
       const id = String(now), e = active.e;
       const r = await tgApi(env, "sendMessage", { chat_id: owner, text: "🕐 Habt ihr noch geöffnet?\n" + e.title + (e.subtitle ? " – " + e.subtitle : "") + "\nBeginn: " + e.start + " Uhr\n\nAntworte mit Ja oder Nein. Ohne Antwort in 20 Minuten wird der Laden auf der Website geschlossen.", reply_markup: { inline_keyboard: [[{ text: "✅ Ja, noch offen", callback_data: "ja:" + id }, { text: "⛔ Nein, schließen", callback_data: "nein:" + id }]] } });
       if (r && r.ok) { st.pend = { at: now, id }; st.next = now + ASK_STEP_MS; }
@@ -760,7 +919,7 @@ function buildInvoicePdf(rec, logo) {
   };
   addExtra("Liefergebühr" + (rec.km ? " (" + String(rec.km).replace(".", ",") + " km)" : ""), Math.round((rec.fee || 0) * 100));
   const tipC = Math.round((rec.tip || 0) * 100);
-  if (tipC > 0) { if (TIP_TAXFREE) rows.push({ name: "Trinkgeld (Aufrundung)", det: ["ohne MwSt."], qty: 1, unitC: tipC, totC: tipC, rate: 0 }); else addExtra("Trinkgeld (Aufrundung)", tipC); }
+  if (tipC > 0) { if (TIP_TAXFREE) rows.push({ name: "Trinkgeld (Aufrundung)", det: [], qty: 1, unitC: tipC, totC: tipC, rate: 0 }); else addExtra("Trinkgeld (Aufrundung)", tipC); }
   const totalC = gross[7] + gross[19] + (TIP_TAXFREE ? tipC : 0);
   const header = (first) => {
     c = [];
@@ -769,7 +928,7 @@ function buildInvoicePdf(rec, logo) {
       if (logo) { const lh = 44, lw = (logo.w / logo.h) * lh; c.push("q " + lw.toFixed(2) + " 0 0 " + lh + " " + L + " 768 cm /Im1 Do Q"); sl.forEach((s, i) => T(s, L, 755 - i * 11.5, 8.5, false, true)); }
       else { T(SELLER.name, L, 790, 13, true); sl.forEach((s, i) => T(s, L, 775 - i * 12.5, 9, false, true)); }
       T("RECHNUNG", R, 790, 22, true, false, true);
-      [["Rechnungsnummer", no], ["Rechnungsdatum", dfmt(inDate)], ["Leistungsdatum", dfmt(inDate)], ["Bestellt am", tfmt(rec.t)]].forEach((p, i) => { T(p[0], 400, 764 - i * 14, 9, false, true); T(p[1], R, 764 - i * 14, 10, true, false, true); });
+      [["Rechnungsnummer", no], ["Rechnungsdatum", dfmt(inDate)], ["Leistungsdatum", dfmt(inDate)], ["Bestellt am", tfmt(rec.t)]].concat(rec.no ? [["Bestellnummer", String(rec.no)]] : []).forEach((p, i) => { T(p[0], 400, 764 - i * 14, 9, false, true); T(p[1], R, 764 - i * 14, 10, true, false, true); });
       T(SELLER.name + " · " + SELLER.street + " · " + SELLER.city, L, 696, 7, false, true);
       let yy = 681;
       T(rec.name || "Kunde", L, yy, 11, true);
@@ -797,7 +956,7 @@ function buildInvoicePdf(rec, logo) {
     T(String(i + 1), L + 4, y, 9.5);
     nameL.forEach((s, k) => T(s, L + 34, y - k * 12, 9.5));
     detL.forEach((s, k) => T(s, L + 40, y - nameL.length * 12 - k * 10 + 2, 8, false, true));
-    T(String(r.qty), 335, y, 9.5, false, false, true); T(money(r.unitC), 405, y, 9.5, false, false, true); T(r.rate ? r.rate + " %" : "frei", 452, y, 9.5, false, false, true); T(money(r.totC), R - 4, y, 9.5, false, false, true);
+    T(String(r.qty), 335, y, 9.5, false, false, true); if (r.rate) { T(money(r.unitC), 405, y, 9.5, false, false, true); T(r.rate + " %", 452, y, 9.5, false, false, true); } else T("nicht umsatzsteuerbar", 452, y, 8, false, true, true); T(money(r.totC), R - 4, y, 9.5, false, false, true);
     y -= h;
     Ln(L, y + 10, R, y + 10, 0.3);
   });
@@ -809,11 +968,11 @@ function buildInvoicePdf(rec, logo) {
     T("Nettobetrag " + rt + " %", 400, y, 9.5, false, false, true); T(money(net), R - 4, y, 9.5, false, false, true); y -= 13;
     T("enthaltene MwSt. " + rt + " %", 400, y, 9.5, false, false, true); T(money(vat), R - 4, y, 9.5, false, false, true); y -= 15;
   });
-  if (TIP_TAXFREE && tipC > 0) { T("Trinkgeld (ohne MwSt.)", 400, y, 9.5, false, false, true); T(money(tipC), R - 4, y, 9.5, false, false, true); y -= 15; }
+  if (TIP_TAXFREE && tipC > 0) { T("Trinkgeld (nicht umsatzsteuerbar)", 400, y, 9.5, false, false, true); T(money(tipC), R - 4, y, 9.5, false, false, true); y -= 15; }
   Ln(330, y + 6, R, y + 6, 0.8);
   y -= 8;
   T("Gesamtbetrag (brutto)", 400, y, 11, true, false, true); T(money(totalC), R - 4, y, 11, true, false, true); y -= 18;
-  T("Bezahlt per Online-Zahlung am " + dfmt(rec.paidAt || inDate), 400, y, 9.5, false, false, true); T("-" + money(totalC), R - 4, y, 9.5, false, false, true); y -= 14;
+  T((rec.paid ? "Bezahlt per Online-Zahlung am " : "Bezahlt vor Ort am ") + dfmt(rec.paidAt || inDate), 400, y, 9.5, false, false, true); T("-" + money(totalC), R - 4, y, 9.5, false, false, true); y -= 14;
   T("Offener Betrag", 400, y, 9.5, true, false, true); T(money(0), R - 4, y, 9.5, true, false, true); y -= 30;
   wrap("Alle Preise sind Endpreise inklusive der gesetzlichen Mehrwertsteuer (MwSt.). Der Rechnungsbetrag wurde bereits bezahlt. Das Leistungsdatum entspricht dem Rechnungsdatum.", false, 8.5, R - L).forEach((s) => { T(s, L, y, 8.5, false, true); y -= 11; });
   pages.push(c);
@@ -831,41 +990,57 @@ async function sendMail(env, to, subject, text, filename, pdf) {
   if (!r.ok) console.log("Rechnungs-Mail fehlgeschlagen", r.status, (await r.text()).slice(0, 200));
   return r.ok;
 }
-// Mail mit voraussichtlicher Ankunftszeit bei Lieferung (bezahlt oder Zahlung vor Ort). Bei einer Wunschzeit wird keine andere Uhrzeit genannt.
-async function sendEta(env, rec) {
+// Bestellbestätigung per E-Mail an den Kunden (jede Bestellung): Bestellnummer, Artikel, Betrag, bei Lieferung voraussichtliche Ankunft.
+// Bei einer Wunschzeit wird keine andere Uhrzeit genannt.
+async function sendConfirm(env, rec) {
   const kv = env.DATA;
   try {
-    if (!env.RESEND_API_KEY || !rec || rec.type !== "Lieferung" || !rec.email || rec.etaMail) return;
+    if (!env.RESEND_API_KEY || !rec || !rec.email || rec.confMail) return;
+    const eu = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
+    const lief = rec.type === "Lieferung", wa = rec.pay === "wa";
+    const totalN = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0) + (rec.tip || 0);
     const wish = String(rec.time || "").trim();
     const hasWish = /\d/.test(wish);
-    const total = ((typeof rec.amount === "number" ? rec.amount : Math.round(((rec.total || 0) + (rec.fee || 0) + (rec.tip || 0)) * 100)) / 100).toFixed(2).replace(".", ",") + " €";
-    const pay = rec.paid ? "Du hast bereits online bezahlt." : "Bitte bezahle bei der Lieferung bar oder mit Karte.";
-    let subject, mid;
-    if (hasWish) {
-      subject = "Deine Bestellung beim Pizza & Baguettehaus am Königspalast: Lieferung zu deiner Wunschzeit";
-      mid = "Du hast als Wunschzeit angegeben: " + wish + ". Wir richten uns danach. Falls das nicht möglich ist, melden wir uns telefonisch bei dir.";
-    } else {
+    const wishT = hasWish ? wish + (/uhr/i.test(wish) ? "" : " Uhr") : "";
+    let when, subj = "";
+    if (wa) when = "Das ist eine unverbindliche Anfrage über WhatsApp. Sie gilt erst, wenn wir sie dir in WhatsApp bestätigt haben. Bitte schick dafür die vorbereitete WhatsApp-Nachricht ab.";
+    else if (lief && hasWish) { when = "Lieferung zu deiner Wunschzeit: " + wishT + ". Falls das nicht klappt, melden wir uns telefonisch bei dir."; subj = " · Lieferung um " + wishT; }
+    else if (lief) {
       const base = rec.paid ? rec.paidAt || Date.now() : rec.t;
       const drive = Math.max(0, Math.ceil(Number(rec.driveMin) || 0));
       const arr = Math.ceil((base + (35 + drive) * 60000) / 300000) * 300000;
       const hm = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" }).format(new Date(arr));
-      subject = "Deine Bestellung beim Pizza & Baguettehaus am Königspalast: voraussichtliche Lieferung gegen " + hm + " Uhr";
-      mid = "Voraussichtliche Ankunft: ca. " + hm + " Uhr (ca. 35 Minuten Zubereitung plus ca. " + drive + " Minuten Fahrzeit).";
-    }
-    const body = "Hallo " + rec.name + ",\n\nvielen Dank für deine Bestellung (" + total + ").\n\n" + mid + "\n\nLieferadresse: " + rec.addr + "\n" + pay + "\n\nBei Fragen erreichst du uns unter 02151 4546528.\n\nPizza & Baguettehaus am Königspalast";
+      when = "Voraussichtliche Ankunft: ca. " + hm + " Uhr (ca. 35 Minuten Zubereitung plus ca. " + drive + " Minuten Fahrzeit).";
+      subj = " · Lieferung gegen " + hm + " Uhr";
+    } else when = hasWish ? "Abholung zu deiner Wunschzeit: " + wishT + "." : "Abholung: Wir bereiten deine Bestellung sofort zu.";
+    const pay = wa ? null : rec.paid ? "Bezahlt: online (" + eu(totalN) + ")." : "Bitte bezahle " + eu(totalN) + " bei " + (lief ? "der Lieferung" : "der Abholung") + " bar oder mit Karte.";
+    const inv = wa || !rec.invEmail ? null : rec.paid ? "Deine Rechnung bekommst du in einer eigenen E-Mail." : "Deine Rechnung schicken wir dir per E-Mail, sobald du bezahlt hast.";
+    const body = [
+      "Hallo " + rec.name + ",", "",
+      (wa ? "vielen Dank für deine Anfrage." : "vielen Dank für deine Bestellung!") + " Deine Bestellnummer: " + rec.no, "",
+      ...(rec.lines || []),
+      rec.fee ? "Liefergebühr – " + eu(rec.fee) : null,
+      rec.tip ? "Trinkgeld (Aufrundung auf den Mindestbestellwert) – " + eu(rec.tip) : null,
+      "Gesamt: " + eu(totalN), "",
+      lief ? "Lieferadresse: " + rec.addr : "Abholung bei uns: Westparkstraße 102, 47803 Krefeld",
+      when, pay, inv,
+      rec.note ? "Deine Anmerkung: " + rec.note : null,
+      "", "Bei Fragen erreichst du uns unter 02151 4546528. Bitte nenne dabei deine Bestellnummer " + rec.no + ".", "", "Pizza & Baguettehaus am Königspalast",
+    ].filter((x) => x !== null).join("\n");
+    const subject = (wa ? "Deine Anfrage Nr. " : "Bestellbestätigung Nr. ") + rec.no + subj + " – Pizza & Baguettehaus am Königspalast";
     if (await sendMail(env, rec.email, subject, body)) {
-      rec.etaMail = true;
+      rec.confMail = true;
       await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
     }
   } catch (e) {
-    console.log("ETA-Mail Fehler", String(e));
+    console.log("Bestätigungs-Mail Fehler", String(e));
   }
 }
 // Rechnung nach jeder bezahlten Online-Bestellung: PDF an die Geschäftsmail, auf Wunsch auch an den Kunden.
 async function sendInvoice(env, rec) {
   const kv = env.DATA;
   try {
-    if (!env.RESEND_API_KEY || !rec || !rec.paid) return;
+    if (!env.RESEND_API_KEY || !rec || !(rec.paid || rec.cashPaid)) return;
     if (rec.invBiz && (!rec.invEmail || rec.invCust)) return;
     if (!rec.invNo) {
       const n = (Number(await kv.get("invseq")) || INV_START) + 1;
@@ -875,10 +1050,10 @@ async function sendInvoice(env, rec) {
       await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
     }
     const pdf = buildInvoicePdf(rec, await loadLogo(env)), fn = "Rechnung-" + rec.invNo + ".pdf";
-    const total = ((typeof rec.amount === "number" ? rec.amount : Math.round(((rec.total || 0) + (rec.fee || 0)) * 100)) / 100).toFixed(2).replace(".", ",") + " €";
+    const total = ((typeof rec.amount === "number" ? rec.amount : Math.round(((rec.total || 0) + (rec.fee || 0) + (rec.tip || 0)) * 100)) / 100).toFixed(2).replace(".", ",") + " €";
     if (!rec.invBiz) {
-      const body = "Neue bezahlte Online-Bestellung. Die Rechnung " + rec.invNo + " liegt als PDF an.\n\nKunde: " + rec.name + (rec.phone ? "\nTelefon: " + rec.phone : "") + "\nArt: " + rec.type + (rec.addr ? " (" + rec.addr + ")" : "") + "\nBetrag: " + total + "\nRechnung an Kunde: " + (rec.invEmail ? "ja, an " + rec.invEmail : "nein, nicht angefordert") + "\n\nBitte diese E-Mail als Buchhaltungsbeleg aufbewahren.";
-      if (await sendMail(env, INV_COPY_TO, "Rechnung " + rec.invNo + ": Online-Bestellung von " + rec.name + " (" + total + ")", body, fn, pdf)) rec.invBiz = true;
+      const body = (rec.paid ? "Neue bezahlte Online-Bestellung" : "Bestellung mit Zahlung vor Ort, als bezahlt markiert") + (rec.no ? " (Bestellnummer " + rec.no + ")" : "") + ". Die Rechnung " + rec.invNo + " liegt als PDF an.\n\nKunde: " + rec.name + (rec.phone ? "\nTelefon: " + rec.phone : "") + "\nArt: " + rec.type + (rec.addr ? " (" + rec.addr + ")" : "") + "\nBetrag: " + total + "\nRechnung an Kunde: " + (rec.invEmail ? "ja, an " + rec.invEmail : "nein, nicht angefordert") + "\n\nBitte diese E-Mail als Buchhaltungsbeleg aufbewahren.";
+      if (await sendMail(env, INV_COPY_TO, "Rechnung " + rec.invNo + ": " + (rec.paid ? "Online-Bestellung" : "Zahlung vor Ort") + (rec.no ? " Nr. " + rec.no : "") + " von " + rec.name + " (" + total + ")", body, fn, pdf)) rec.invBiz = true;
     }
     if (rec.invEmail && !rec.invCust) {
       const body = "Hallo " + rec.name + ",\n\nvielen Dank für deine Bestellung beim Pizza & Baguettehaus am Königspalast. Im Anhang findest du deine Rechnung " + rec.invNo + " über " + total + ".\n\nBei Fragen erreichst du uns telefonisch unter 02151 4546528 oder per Antwort auf diese E-Mail.\n\nGuten Appetit!\nPizza & Baguettehaus am Königspalast";
@@ -932,7 +1107,7 @@ async function addLedger(env, rec) {
   try {
     if (!rec || !rec.id || (!rec.paid && rec.pay !== "vorort")) return;
     const ts = rec.paid ? rec.paidAt || rec.t : rec.t;
-    const e = { id: rec.id, t: ts, pay: rec.paid ? "online" : "vorort", type: rec.type, invNo: rec.invNo || "", items: (rec.items || []).map((x) => ({ name: x.name, qty: x.qty, unit: x.unit, cat: x.cat })), fee: rec.fee || 0, tip: rec.tip || 0 };
+    const e = { id: rec.id, no: rec.no || "", t: ts, pay: rec.paid ? "online" : "vorort", type: rec.type, invNo: rec.invNo || "", items: (rec.items || []).map((x) => ({ name: x.name, qty: x.qty, unit: x.unit, cat: x.cat })), fee: rec.fee || 0, tip: rec.tip || 0 };
     await setJSON(env.DATA, "led:" + ymOf(ts) + ":" + rec.id, e, { expirationTtl: 400 * 86400 });
   } catch (e) {
     console.log("Ledger-Fehler", String(e));
@@ -963,11 +1138,11 @@ async function monthlyReport(env, forceMonth) {
     const tm = (ts) => new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" }).format(new Date(ts));
     const Z = () => ({ n: 0, g7: 0, n7: 0, v7: 0, g19: 0, n19: 0, v19: 0, tip: 0, fee: 0, total: 0 });
     const S = { online: Z(), vorort: Z() }, T = Z(), art = {};
-    const rows = ["Datum;Uhrzeit;Bestellnr.;Rechnungsnr.;Zahlart;Art;Brutto gesamt;darin Liefergebühr;Trinkgeld (ohne MwSt.);Brutto 7 %;Netto 7 %;MwSt. 7 %;Brutto 19 %;Netto 19 %;MwSt. 19 %"];
+    const rows = ["Datum;Uhrzeit;Bestellnr.;Rechnungsnr.;Zahlart;Art;Brutto gesamt;darin Liefergebühr;Trinkgeld (nicht umsatzsteuerbar);Brutto 7 %;Netto 7 %;MwSt. 7 %;Brutto 19 %;Netto 19 %;MwSt. 19 %"];
     for (const e of list) {
       const v = vatSplit(e), s = S[e.pay] || S.online;
       for (const o of [s, T]) { o.n++; for (const f of ["g7", "n7", "v7", "g19", "n19", "v19", "tip", "fee", "total"]) o[f] += v[f]; }
-      rows.push([dt(e.t), tm(e.t), e.id.split(":")[1] || e.id, e.invNo || "", e.pay === "online" ? "Online (Stripe)" : "Vor Ort (bar/Karte)", e.type, eu(v.total), eu(v.fee), eu(v.tip), eu(v.g7), eu(v.n7), eu(v.v7), eu(v.g19), eu(v.n19), eu(v.v19)].join(";"));
+      rows.push([dt(e.t), tm(e.t), e.no || e.id.split(":")[1] || e.id, e.invNo || "", e.pay === "online" ? "Online (Stripe)" : "Vor Ort (bar/Karte)", e.type, eu(v.total), eu(v.fee), eu(v.tip), eu(v.g7), eu(v.n7), eu(v.v7), eu(v.g19), eu(v.n19), eu(v.v19)].join(";"));
       for (const x of e.items || []) {
         const rt = invRate(x), k = x.name + "|" + rt;
         const a = art[k] || (art[k] = { name: x.name, rate: rt, qty: 0, g: 0 });
@@ -976,9 +1151,9 @@ async function monthlyReport(env, forceMonth) {
       }
     }
     const arts = ["Artikel;MwSt.-Satz;Menge;Umsatz brutto;Netto;MwSt."].concat(Object.values(art).sort((a, b) => b.g - a.g).map((a) => { const n = Math.round(a.g / (1 + a.rate / 100)); return [a.name, a.rate + " %", a.qty, eu(a.g), eu(n), eu(a.g - n)].join(";"); }));
-    const block = (title, s) => title + ": " + s.n + " Bestellungen, Umsatz brutto " + eu(s.total) + " €\n  Speisen und anteilige Liefergebühr 7 %: brutto " + eu(s.g7) + " €, netto " + eu(s.n7) + " €, MwSt. " + eu(s.v7) + " €\n  Getränke und anteilige Liefergebühr 19 %: brutto " + eu(s.g19) + " €, netto " + eu(s.n19) + " €, MwSt. " + eu(s.v19) + " €\n  Liefergebühren gesamt " + eu(s.fee) + " € (in den Steuersätzen enthalten), Trinkgeld ohne MwSt. " + eu(s.tip) + " €\n  MwSt. gesamt: " + eu(s.v7 + s.v19) + " €";
+    const block = (title, s) => title + ": " + s.n + " Bestellungen, Umsatz brutto " + eu(s.total) + " €\n  Speisen und anteilige Liefergebühr 7 %: brutto " + eu(s.g7) + " €, netto " + eu(s.n7) + " €, MwSt. " + eu(s.v7) + " €\n  Getränke und anteilige Liefergebühr 19 %: brutto " + eu(s.g19) + " €, netto " + eu(s.n19) + " €, MwSt. " + eu(s.v19) + " €\n  Liefergebühren gesamt " + eu(s.fee) + " € (in den Steuersätzen enthalten), Trinkgeld (nicht umsatzsteuerbar) " + eu(s.tip) + " €\n  MwSt. gesamt: " + eu(s.v7 + s.v19) + " €";
     const [yy, mm] = ym.split("-");
-    const text = "Umsatzaufstellung " + mm + "/" + yy + " (Bestellungen über die Website)\n\n" + block("GESAMT", T) + "\n\n" + block("Online bezahlt (Stripe)", S.online) + "\n\n" + block("Zahlung vor Ort (bar oder Karte, bitte mit der Kasse abgleichen)", S.vorort) + "\n\nIm Anhang: alle Bestellungen einzeln und alle Artikel mit Steuersatz (CSV-Dateien, mit Excel zu öffnen).\n\nHinweise: Rückerstattungen in Stripe sind nicht abgezogen. Bestellungen per WhatsApp oder Telefon sind nicht enthalten. Vor-Ort-Bestellungen sind enthalten, auch wenn sie nicht abgeholt wurden. Steuersätze: Speisen 7 %, Getränke 19 %, Liefergebühr anteilig; Trinkgeld ohne MwSt. (bitte vom Steuerberater prüfen lassen).";
+    const text = "Umsatzaufstellung " + mm + "/" + yy + " (Bestellungen über die Website)\n\n" + block("GESAMT", T) + "\n\n" + block("Online bezahlt (Stripe)", S.online) + "\n\n" + block("Zahlung vor Ort (bar oder Karte, bitte mit der Kasse abgleichen)", S.vorort) + "\n\nIm Anhang: alle Bestellungen einzeln und alle Artikel mit Steuersatz (CSV-Dateien, mit Excel zu öffnen).\n\nHinweise: Rückerstattungen in Stripe sind nicht abgezogen. Bestellungen per WhatsApp oder Telefon sind nicht enthalten. Vor-Ort-Bestellungen sind enthalten, auch wenn sie nicht abgeholt wurden. Steuersätze: Speisen 7 %, Getränke 19 %, Liefergebühr anteilig; Trinkgeld als nicht umsatzsteuerbar behandelt (bitte vom Steuerberater prüfen lassen).";
     const csv = (s) => b64(new TextEncoder().encode(String.fromCharCode(65279) + s));
     const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [INV_COPY_TO], subject: "Umsatzaufstellung " + mm + "/" + yy + ": " + eu(T.total) + " € (" + T.n + " Bestellungen)", text, attachments: [{ filename: "Umsatz-" + ym + "-Bestellungen.csv", content: csv(rows.join("\r\n")) }, { filename: "Umsatz-" + ym + "-Artikel.csv", content: csv(arts.join("\r\n")) }] }) });
     if (r.ok && !forceMonth) await kv.put("rep:" + ym, String(now), { expirationTtl: 60 * 86400 });
