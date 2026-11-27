@@ -99,6 +99,7 @@ dialog::backdrop{background:rgba(0,0,0,.7)}
 dialog h3{margin-bottom:6px}dialog p{color:var(--mute);font-size:.9rem;margin-bottom:14px}
 dialog input[type=text],dialog input[type=password],dialog input[type=number],dialog textarea{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:#0f0f10;color:var(--text);font:inherit;margin-bottom:12px}
 dialog textarea{min-height:60px}
+dialog select{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:#0f0f10;color:var(--text);font:inherit;margin-bottom:12px}
 dialog label.l{display:block;font-size:.85rem;color:var(--mute);margin:4px 0}
 dialog .col{display:flex;flex-direction:column;gap:10px}
 .msg{margin-top:12px;font-size:.88rem;color:var(--gold)}
@@ -285,30 +286,47 @@ dialog.full[open]{display:block}
   <p id="cart-status"></p>
   <div id="cart-lines"></div>
   <div class="sum"><span>Summe</span><span id="cart-total"></span></div>
+  <div id="acct-box" hidden style="margin:10px 0 4px"></div>
   <label class="l" for="c-name">Dein Name *</label>
   <input type="text" id="c-name" placeholder="Vor- und Nachname" autocomplete="name">
-  <label class="l" id="c-phone-l" for="c-phone">Handynummer * (Pflicht bei Online- und Vor-Ort-Bestellung)</label>
+  <label class="l" id="c-mail-l" for="c-mail">E-Mail-Adresse * (für Bestellbestätigung und Bestellnummer)</label>
+  <input type="text" id="c-mail" inputmode="email" autocomplete="email" placeholder="name@beispiel.de">
+  <label class="l" id="c-phone-l" for="c-phone">Handynummer * (für Rückfragen zu deiner Bestellung)</label>
   <input type="text" id="c-phone" placeholder="z. B. 0172 1234567" autocomplete="tel" inputmode="tel">
-  <label class="l" id="c-mail-l" for="c-mail" hidden>E-Mail-Adresse * (für die Info zur Lieferzeit)</label>
-  <input type="text" id="c-mail" inputmode="email" autocomplete="email" placeholder="name@beispiel.de" hidden>
   <div class="radio">
     <label><input type="radio" name="ctype" value="Abholung" checked><span>🏃 Abholung</span></label>
     <label><input type="radio" name="ctype" value="Lieferung"><span>🛵 Lieferung</span></label>
   </div>
-  <div id="c-addr-wrap" hidden><label class="l" id="c-addr-l" for="c-street">Lieferadresse *</label><input type="text" id="c-street" placeholder="Straße und Hausnummer" autocomplete="address-line1"><div style="display:flex;gap:8px"><input type="text" id="c-plz" placeholder="PLZ" inputmode="numeric" maxlength="5" autocomplete="postal-code" style="width:110px;flex:none"><input type="text" id="c-city" placeholder="Ort" value="Krefeld" autocomplete="address-level2" style="flex:1;min-width:0"></div><input type="hidden" id="c-addr"></div>
+  <div id="c-addr-wrap" hidden><label class="l" id="c-addr-l" for="c-street">Lieferadresse *</label><div style="display:flex;gap:8px"><input type="text" id="c-street" placeholder="Straße" autocomplete="address-line1" style="flex:1;min-width:0"><input type="text" id="c-hnr" placeholder="Nr." autocomplete="off" maxlength="12" style="width:90px;flex:none"></div><div style="display:flex;gap:8px"><input type="text" id="c-plz" placeholder="PLZ" inputmode="numeric" maxlength="5" autocomplete="postal-code" style="width:110px;flex:none"><input type="text" id="c-city" placeholder="Ort" value="Krefeld" autocomplete="address-level2" style="flex:1;min-width:0"></div><div class="msg" id="addr-hint" style="margin:0 0 10px"></div><input type="hidden" id="c-addr"></div>
   <div class="legal" id="f-deliv" hidden>🛵 <b>Lieferung:</b> Die Lieferkosten richten sich nach der Fahrstrecke. Bis 1 km: Mindestbestellwert 20 €, keine Liefergebühr. 1 bis 3 km: Mindestbestellwert 25 €, Liefergebühr 1 €. 3 bis 5 km: Mindestbestellwert 30 €, Liefergebühr 2 €. Ab 5 km: Mindestbestellwert 35 €, Liefergebühr 3 €. Abholen ist günstiger.</div>
-<label class="l" for="c-time">Wunschzeit (optional)</label>
-  <input type="text" id="c-time" placeholder="z. B. 12:30 Uhr oder „so schnell wie möglich“">
+<label class="l" for="c-time">Wunschzeit (nur innerhalb unserer Öffnungszeiten)</label>
+  <select id="c-time"><option value="">So schnell wie möglich</option></select>
   <label class="l" for="c-note">Allgemeine Anmerkung (optional)</label>
   <textarea id="c-note" placeholder="z. B. Allergien, Wechselgeld …"></textarea>
-  <div class="legal">Alle Preise sind Endpreise inkl. MwSt. (Speisen 7 %, Getränke 19 %) Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 2 BGB). Deine Bestellung wird zur Bearbeitung 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>). Über „Weiter zu WhatsApp“ schickst du nur eine unverbindliche Anfrage, die erst gilt, wenn wir sie dir in WhatsApp bestätigt haben.</div>
+  <div class="legal">Alle Preise sind Endpreise inkl. MwSt. (Speisen 7 %, Getränke 19 %) Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 2 BGB). Deine Bestellung wird zur Bearbeitung 30 Tage auf unserem Server gespeichert (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>). Nach dem Bestellen bekommst du eine Bestellnummer und eine Bestätigung per E-Mail. Über „Weiter zu WhatsApp“ schickst du nur eine unverbindliche Anfrage, die erst gilt, wenn wir sie dir in WhatsApp bestätigt haben.</div>
   <div class="col">
-    <div id="pay-box" hidden><div class="legal" id="pay-info"></div><button class="btn primary" id="cart-pay" type="button">💳 Zahlungspflichtig bestellen (online bezahlen)</button><button class="btn primary" id="cart-cash" type="button" style="display:flex;margin-top:10px">💶 Zahlungspflichtig bestellen (Bezahlung vor Ort, bar oder Karte)</button><button class="btn ghost" id="cart-inv" type="button" style="display:flex;margin-top:10px" hidden>🧾 Rechnung anfordern (nur bei Online-Zahlung)</button><div id="inv-mail-wrap" hidden><label class="l" for="c-inv" style="margin-top:8px">E-Mail-Adresse für die Rechnung *</label><input type="text" id="c-inv" inputmode="email" autocomplete="email" placeholder="name@beispiel.de"></div></div>
+    <div id="pay-box" hidden><div class="legal" id="pay-info"></div><button class="btn primary" id="cart-pay" type="button">💳 Zahlungspflichtig bestellen (online bezahlen)</button><button class="btn primary" id="cart-cash" type="button" style="display:flex;margin-top:10px">💶 Zahlungspflichtig bestellen (Bezahlung vor Ort, bar oder Karte)</button><button class="btn ghost" id="cart-inv" type="button" style="display:flex;margin-top:10px" hidden>🧾 Rechnung anfordern</button></div>
     <button class="btn wa" id="cart-send">💬 Weiter zu WhatsApp</button>
     <button class="btn ghost" id="cart-clear">Warenkorb leeren</button>
     <button class="btn ghost" id="cart-close">Weiter auswählen</button>
   </div>
   <div class="msg" id="cart-msg"></div>
+</dialog>
+
+<!-- Kundenkonto -->
+<dialog id="acct">
+  <h3>👤 Anmelden</h3>
+  <p>Ohne Passwort: Wir schicken dir einen Code an deine E-Mail-Adresse. Danach sind Name, Telefonnummer, Adresse und deine letzte Bestellung gespeichert und beim nächsten Mal schon ausgefüllt.</p>
+  <label class="l" for="a-mail">E-Mail-Adresse</label>
+  <input type="text" id="a-mail" inputmode="email" autocomplete="email" placeholder="name@beispiel.de">
+  <div id="a-code-wrap" hidden><label class="l" for="a-code">Code aus der E-Mail</label><input type="text" id="a-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 Ziffern"></div>
+  <div class="legal">Gespeichert werden E-Mail-Adresse, Name, Telefonnummer, Adresse und deine letzte Bestellung, bis du dein Konto löschst oder es 2 Jahre nicht nutzt (siehe <a href="datenschutz.html" style="text-decoration:underline">Datenschutz</a>).</div>
+  <div class="col">
+    <button class="btn primary" id="a-send" type="button">Code per E-Mail senden</button>
+    <button class="btn wa" id="a-go" type="button" hidden>Anmelden</button>
+    <button class="btn ghost" id="a-close" type="button">Abbrechen</button>
+  </div>
+  <div class="msg" id="a-msg"></div>
 </dialog>
 
 <!-- Inhaber -->
@@ -574,22 +592,28 @@ $("cart-close").onclick=()=>$("cart").close();
 $("cart-clear").onclick=()=>{CART=[];renderCart();$("cart").close()};
 document.querySelectorAll("[name=ctype]").forEach(r=>r.onchange=()=>{$("c-addr-wrap").hidden=document.querySelector("[name=ctype]:checked").value!=="Lieferung"});
 
-$("cart-send").onclick=()=>{
-  const msg=$("cart-msg"),name=$("c-name").value.trim(),type=document.querySelector("[name=ctype]:checked").value,addr=$("c-addr").value.trim();
+$("cart-send").onclick=async()=>{
+  const msg=$("cart-msg"),name=$("c-name").value.trim(),type=document.querySelector("[name=ctype]:checked").value,addr=$("c-addr").value.trim(),mail=$("c-mail").value.trim();
   if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
   if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
-  if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-street").focus();return}
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail)){msg.textContent="Bitte gib deine E-Mail-Adresse an. Dorthin schicken wir deine Bestellnummer.";$("c-mail").focus();return}
+  if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die vollständige Lieferadresse an (Straße, Hausnummer, PLZ und Ort).";$("c-street").focus();return}
   const lines=CART.map(x=>`${x.qty}x ${lineName(x.key)} – ${eur(unit(x)*x.qty)}${summary(x).map(t=>`\n   ${t}`).join("")}${x.note?`\n   Anmerkung: ${x.note}`:""}`);
-  const t=$("c-time").value.trim(),n=$("c-note").value.trim();
-  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}${type==="Lieferung"&&window.ROUTE?`\nLiefergebühr: ${eur(window.ROUTE.fee)} (${String(window.ROUTE.km).replace(".",",")} km Fahrstrecke)\nGesamt: ${eur(total()+window.ROUTE.fee)}`:""}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t:""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
-  const order={name,type,addr:type==="Lieferung"?addr:"",time:t,note:n,lines,total:total(),fee:type==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0,km:type==="Lieferung"&&window.ROUTE?window.ROUTE.km:0};
-  try{
-    if(STATUS_API)fetch(STATUS_API+"/orders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(order),keepalive:true}).catch(()=>{});
-    else{const l=store.get("demoOrders")||[];l.unshift({...order,id:String(Date.now()),t:Date.now()});store.set("demoOrders",l.slice(0,50))}
-  }catch(e){}
+  const t=$("c-time").value,n=$("c-note").value.trim();
+  const order={name,email:mail,phone:$("c-phone").value.trim(),type,addr:type==="Lieferung"?addr:"",addrParts:type==="Lieferung"&&window.addrParts?addrParts():null,time:t,note:n,lines,cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),total:total(),fee:type==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0,km:type==="Lieferung"&&window.ROUTE?window.ROUTE.km:0,token:window.ACCT_TOKEN||""};
+  let w=null;try{w=window.open("","_blank")}catch(e){}
+  let no=null;
+  if(STATUS_API){
+    try{
+      const r=await fetch(STATUS_API+"/orders",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(order)});const j=await r.json().catch(()=>({}));
+      if(!r.ok){if(w)w.close();msg.textContent=({email:"Bitte gib eine gültige E-Mail-Adresse an.",time:"Die Wunschzeit liegt außerhalb unserer Öffnungszeiten. Bitte wähle eine andere Zeit.",limit:"Zu viele Anfragen. Bitte warte kurz."})[j.error]||"Die Anfrage konnte gerade nicht gespeichert werden. Bitte versuche es nochmal.";return}
+      no=j.no||null;
+    }catch(e){}
+  }else{try{const l=store.get("demoOrders")||[];l.unshift({...order,id:String(Date.now()),t:Date.now()});store.set("demoOrders",l.slice(0,50))}catch(e){}}
+  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website${no?", Bestellnummer "+no:""}):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}${type==="Lieferung"&&window.ROUTE?`\nLiefergebühr: ${eur(window.ROUTE.fee)} (${String(window.ROUTE.km).replace(".",",")} km Fahrstrecke)\nGesamt: ${eur(total()+window.ROUTE.fee)}`:""}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t+" Uhr":""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
   const url=`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
-  msg.innerHTML=`Du wirst zu WhatsApp weitergeleitet. Dort musst du die vorbereitete Nachricht nur noch abschicken. Falls nichts passiert: <a href="${url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:underline">hier tippen</a>.`;
-  const a=document.createElement("a");a.href=url;a.target="_blank";a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
+  msg.innerHTML=`${no?`Deine Bestellnummer: <b>${no}</b> (auch per E-Mail). `:""}Du wirst zu WhatsApp weitergeleitet. Dort musst du die vorbereitete Nachricht nur noch abschicken. Falls nichts passiert: <a href="${url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:underline">hier tippen</a>.`;
+  if(w){try{w.location.href=url}catch(e){location.href=url}}else location.href=url;
 };
 
 /* ===== INHABER ===== */
@@ -656,7 +680,7 @@ async function loadOrders(){
     if(STATUS_API){const r=await post("/orders/list",{pin:OPIN});if(!r.ok){odlg.close();lost();return}list=(await r.json()).orders||[]}
     else list=store.get("demoOrders")||[];
   }catch(e){box.innerHTML="";$("ord-msg").textContent="Konnte die Bestellanfragen nicht laden.";return}
-  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}${o.phone?" · Tel: "+esc(o.phone):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur((o.total||0)+(o.fee||0))}</b>${o.fee?`<span>inkl. ${eur(o.fee)} Liefergebühr</span>`:""}${o.paid?`<span>✅ online bezahlt</span>`:(o.pay==="vorort"?`<span>💶 Zahlung vor Ort</span>`:"")}<button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
+  box.innerHTML=list.length?list.map(o=>`<div class="ord"><div class="oh"><b>${o.no?"Nr. "+o.no+" · ":""}${esc(o.name)}</b><span>${new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></div><div class="os">${esc(o.type)}${o.addr?" · "+esc(o.addr):""}${o.time?" · Wunschzeit: "+esc(o.time):""}${o.phone?" · Tel: "+esc(o.phone):""}${o.email?" · "+esc(o.email):""}</div><pre>${esc(o.lines.join("\n"))}</pre>${o.note?`<div class="os">Anmerkung: ${esc(o.note)}</div>`:""}<div class="oh"><b>${eur((o.total||0)+(o.fee||0))}</b>${o.fee?`<span>inkl. ${eur(o.fee)} Liefergebühr</span>`:""}${o.paid?`<span>✅ online bezahlt</span>`:(o.pay==="vorort"?(o.cashPaid?`<span>✅ vor Ort bezahlt</span>`:`<span>💶 Zahlung vor Ort</span>`):"")}<button class="add" type="button" data-del="${esc(o.id)}">Löschen</button></div></div>`).join(""):"<p>Keine Bestellanfragen gespeichert.</p>";
 }
 async function delOrders(body){
   try{
@@ -747,7 +771,7 @@ function upd(){
 const lief=FULFIL==="Lieferung",R=window.ROUTE;
 box.hidden=!(lief&&CFG.route);$("f-deliv").hidden=!lief||(CFG.route&&!!R);
 if(lief&&CFG.route){box.innerHTML=R?`🛵 Fahrstrecke: <b>${String(R.km).replace(".",",")} km</b> · Liefergebühr: <b>${eur(R.fee)}</b> · Mindestbestellwert: <b>${R.min} €</b>`+(total()<R.min?`<br>⚠️ Dir fehlen noch <b>${eur(R.min-total())}</b> bis zum Mindestbestellwert.<br><button type="button" class="btn ghost" id="tip-btn" style="margin-top:8px;font-size:.85rem;padding:8px 14px">${window.TIPON?"✅ Fehlbetrag wird als Trinkgeld aufgefüllt (zum Ändern antippen)":"💶 Trotzdem bestellen: Fehlbetrag als Trinkgeld auffüllen"}</button>`:""):(box.dataset.state==="busy"?"Berechne Fahrstrecke …":(box.dataset.err||"Bitte gib deine vollständige Lieferadresse an. Die Lieferkosten werden nach der Fahrstrecke berechnet."))}
-rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div>${tipAmt()>0?`<div class="sum"><span>Trinkgeld (Auffüllung, ohne MwSt.)</span><span>${eur(tipAmt())}</span></div>`:""}<div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee+tipAmt())}</span></div>`:"";
+rows.innerHTML=lief&&R?`<div class="sum"><span>Liefergebühr</span><span>${eur(R.fee)}</span></div>${tipAmt()>0?`<div class="sum"><span>Trinkgeld (Auffüllung, nicht umsatzsteuerbar)</span><span>${eur(tipAmt())}</span></div>`:""}<div class="sum"><span>Gesamt</span><span>${eur(total()+R.fee+tipAmt())}</span></div>`:"";
 }
 async function calc(){
 const a=addr.value.trim();window.ROUTE=null;box.dataset.err="";
@@ -780,8 +804,8 @@ const box=$("pay-box"),btn=$("cart-pay"),info=$("pay-info"),msg=$("cart-msg");
 fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{PAY=!!(c&&c.pay);INV=!!(c&&c.inv);updPay()}).catch(()=>{});
 const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0)+tipAmt();
 function updPay(){
-$("c-phone").hidden=$("c-phone-l").hidden=!PAY;$("c-mail").hidden=$("c-mail-l").hidden=!(PAY&&FULFIL==="Lieferung");box.hidden=!PAY||!CART.length;if(box.hidden)return;
-if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("inv-mail-wrap").hidden=!(INV&&invOn&&FULFIL!=="Lieferung");$("c-addr-wrap").hidden=!(FULFIL==="Lieferung"||(INV&&invOn));$("c-addr-l").textContent=FULFIL==="Lieferung"?"Lieferadresse *":"Rechnungsadresse *";$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?(FULFIL==="Lieferung"?"✅ Rechnung angefordert (geht an deine E-Mail oben)":"✅ Rechnung angefordert (nur bei Online-Zahlung)"):"🧾 Rechnung anfordern (nur bei Online-Zahlung)";
+$("c-phone").hidden=$("c-phone-l").hidden=!PAY;box.hidden=!PAY||!CART.length;if(box.hidden)return;
+if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("c-addr-wrap").hidden=!(FULFIL==="Lieferung"||(INV&&invOn));$("c-addr-l").textContent=FULFIL==="Lieferung"?"Lieferadresse *":"Rechnungsadresse *";$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?"✅ Rechnung angefordert (per E-Mail; bei Zahlung vor Ort, sobald du bezahlt hast)":"🧾 Rechnung anfordern";
 const st=computeStatus(),ok=st.s==="open"||st.s==="event";
 btn.disabled=$("cart-cash").disabled=!ok;
 const h=ok?`<b>Online bezahlen (Apple Pay, Karte u. a.):</b> Gesamtpreis inkl. MwSt. (Speisen 7 %, Getränke 19 %): <b>${eur(grand())}</b>${FULFIL==="Lieferung"&&window.ROUTE?` (inkl. ${eur(window.ROUTE.fee)} Liefergebühr)`:""}. Mit Klick auf „Zahlungspflichtig bestellen“ gibst du eine verbindliche Bestellung ab und wirst zu Stripe weitergeleitet. Alternativ kannst du bei Abholung oder Lieferung bar oder mit Karte bezahlen (zweiter Knopf). Bei frisch zubereiteten, schnell verderblichen Speisen besteht kein Widerrufsrecht. Kann deine Bestellung nicht ausgeführt werden, erstatten wir dir den Betrag.`:`Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;
@@ -789,18 +813,15 @@ if(h!==last){info.innerHTML=h;last=h}
 }
 const _rc=renderCart;renderCart=function(){_rc();updPay()};
 setInterval(()=>{if($("cart").open)updPay()},500);
-$("cart-inv").onclick=()=>{invOn=!invOn;last="";updPay();if(invOn)$("c-inv").focus()};
+$("cart-inv").onclick=()=>{invOn=!invOn;last="";updPay();if(invOn&&FULFIL!=="Lieferung")$("c-street").focus()};
 const go=async(mode)=>{
 const name=$("c-name").value.trim(),addr=$("c-addr").value.trim(),lief=FULFIL==="Lieferung",R=window.ROUTE;
 if(!CART.length){msg.textContent="Der Warenkorb ist leer.";return}
 if(!name){msg.textContent="Bitte gib deinen Namen an.";$("c-name").focus();return}
 const phone=$("c-phone").value.trim();if(phone.replace(/\D/g,"").length<8){msg.textContent="Bitte gib deine Handynummer an, damit wir dich bei Rückfragen erreichen.";$("c-phone").focus();return}
 const mail=$("c-mail").value.trim();const okm=s=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
-if(lief&&!okm(mail)){msg.textContent="Bitte gib deine E-Mail-Adresse an, damit wir dir die voraussichtliche Lieferzeit schicken können.";$("c-mail").focus();return}
-const invMail=$("c-inv").value.trim()||mail;
-if(invOn&&mode==="online"&&!lief&&!$("c-addr").value){msg.textContent="Bitte gib deine vollständige Rechnungsadresse an (Straße mit Hausnummer, PLZ und Ort).";$("c-street").focus();return}
-if(invOn&&mode==="vorort"){msg.textContent="Eine Rechnung gibt es nur bei Online-Zahlung. Wähle „online bezahlen“ oder schalte die Rechnung aus.";return}
-if(invOn&&!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(invMail)){msg.textContent="Bitte gib eine gültige E-Mail-Adresse für die Rechnung an.";$("c-inv").focus();return}
+if(!okm(mail)){msg.textContent="Bitte gib deine E-Mail-Adresse an. Dorthin schicken wir deine Bestellbestätigung mit Bestellnummer.";$("c-mail").focus();return}
+if(invOn&&!lief&&!addr){msg.textContent="Bitte gib deine vollständige Rechnungsadresse an (Straße, Hausnummer, PLZ und Ort).";$("c-street").focus();return}
 if(lief){
 if(!addr){msg.textContent="Bitte gib die Lieferadresse an.";$("c-street").focus();return}
 if(!R||R.addr!==addr){msg.textContent="Bitte kurz warten, bis die Fahrstrecke für deine Adresse berechnet ist.";return}
@@ -808,28 +829,94 @@ if(total()<R.min&&!window.TIPON){msg.textContent="Der Mindestbestellwert für de
 }
 btn.disabled=$("cart-cash").disabled=true;msg.textContent=mode==="vorort"?"Einen Moment, deine Bestellung wird gesendet …":"Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
 try{
-const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:lief?mail:"",tipFill:tipAmt()>0,billAddr:invOn&&!lief&&mode==="online"?$("c-addr").value:"",invoiceEmail:invOn&&mode==="online"?invMail:"",fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value.trim(),note:$("c-note").value.trim(),clientTotal:grand()})});
+const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:mail,invoice:invOn,tipFill:tipAmt()>0,billAddr:invOn&&!lief?addr:"",addrParts:(lief||invOn)&&window.addrParts?addrParts():null,fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value,note:$("c-note").value.trim(),clientTotal:grand(),token:window.ACCT_TOKEN||""})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.url){location.href=j.url;return}
-if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").textContent="Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.";$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
-msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",email:"Bitte gib eine gültige E-Mail-Adresse an.",billaddr:"Die Rechnungsadresse wurde nicht gefunden. Bitte prüfe Straße, Hausnummer, PLZ und Ort.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
+if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").innerHTML=(j.no?`Deine Bestellnummer: <b style="font-size:1.5em">${j.no}</b><br>`:"")+"Die Bestätigung kommt per E-Mail an "+esc(mail)+". Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte."+(invOn?" Die Rechnung schicken wir dir, sobald du bezahlt hast.":"");if(window.acctRefresh)acctRefresh();$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
+msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",email:"Bitte gib eine gültige E-Mail-Adresse an.",billaddr:"Die Rechnungsadresse wurde nicht gefunden. Bitte prüfe Straße, Hausnummer, PLZ und Ort.",time:"Die Wunschzeit liegt außerhalb unserer Öffnungszeiten. Bitte wähle eine andere Zeit.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
 }catch(e){msg.textContent="Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an."}
 btn.disabled=false;updPay();
 };
 btn.onclick=()=>go("online");$("cart-cash").onclick=()=>go("vorort");
-const q=new URLSearchParams(location.search).get("bezahlt");
+const qs=new URLSearchParams(location.search),q=qs.get("bezahlt"),oid=qs.get("o")||"";
 if(q!==null){
 history.replaceState(null,"",location.pathname);
 const d=$("paid");
-if(q==="1"){CART=[];persist();$("paid-t").textContent="Danke, deine Zahlung ist angekommen! 🎉";$("paid-p").textContent="Wir bereiten deine Bestellung vor. Bei Fragen erreichst du uns telefonisch oder per WhatsApp."}
+if(q==="1"){CART=[];persist();$("paid-t").textContent="Danke, deine Zahlung ist angekommen! 🎉";$("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer wird geladen …";let k=0;const poll=async()=>{try{const j=await (await fetch("/api/ordno?id="+encodeURIComponent(oid),{cache:"no-store"})).json();if(j&&j.no){$("paid-p").innerHTML=`Deine Bestellnummer: <b style="font-size:1.5em">${j.no}</b><br>Die Bestellbestätigung kommt per E-Mail. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;return}}catch(e){}if(++k<20)setTimeout(poll,2000);else $("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer bekommst du per E-Mail."};if(oid)poll();else $("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer bekommst du per E-Mail."}
 else{$("paid-t").textContent="Zahlung abgebrochen";$("paid-p").textContent="Es wurde nichts abgebucht. Dein Warenkorb ist noch da."}
 $("paid-ok").onclick=()=>d.close();d.showModal();
 }
 setInterval(()=>{if(odlg.open)loadOrders()},20000);
 })();
 </script><script>
-(()=>{const st=$("c-street"),pz=$("c-plz"),ct=$("c-city"),hid=$("c-addr");
-const comp=()=>{const s=st.value.trim(),p=pz.value.trim(),c=ct.value.trim();const ok=/\d/.test(s)&&/^\d{5}$/.test(p)&&c.length>1;const v=ok?s+", "+p+" "+c:"";if(hid.value!==v){hid.value=v;hid.dispatchEvent(new Event("input"))}};
-[st,pz,ct].forEach(x=>x.addEventListener("input",comp));})();
+(()=>{const st=$("c-street"),hn=$("c-hnr"),pz=$("c-plz"),ct=$("c-city"),hid=$("c-addr"),hint=$("addr-hint");
+window.addrParts=()=>({street:st.value.trim(),hnr:hn.value.trim(),plz:pz.value.trim(),city:ct.value.trim()});
+const L=/[A-Za-zÄÖÜäöüß]{2}/,HN=/^\d+\s*[a-zA-Z]?(\s*[-\/]\s*\d+\s*[a-zA-Z]?)?$/;
+const split=()=>{const m=st.value.match(/^(.*?[^\d\s,])[\s,]+(\d+\s*[a-zA-Z]?(?:\s*[-\/]\s*\d+\s*[a-zA-Z]?)?)\s*$/);if(m&&!hn.value.trim()){st.value=m[1].trim();hn.value=m[2]}};
+const comp=()=>{const s=st.value.trim(),h=hn.value.trim(),p=pz.value.trim(),c=ct.value.trim();
+const okS=L.test(s)&&!/\d{5}/.test(s),okH=HN.test(h),okP=/^\d{5}$/.test(p),okC=L.test(c);
+const v=okS&&okH&&okP&&okC?s+" "+h+", "+p+" "+c:"";
+hint.textContent=(s||h||p)&&!v?(!okS?"Bitte trage den Straßennamen ein.":!okH?"Bitte trage die Hausnummer in das Feld „Nr.“ ein.":!okP?"Bitte trage eine 5-stellige PLZ ein.":"Bitte trage den Ort ein."):"";
+if(hid.value!==v){hid.value=v;hid.dispatchEvent(new Event("input"))}};
+window.addrComp=()=>{split();comp()};
+[st,hn,pz,ct].forEach(x=>x.addEventListener("input",comp));st.addEventListener("change",()=>{split();comp()});st.addEventListener("blur",()=>{split();comp()});})();
+</script><script>
+/* Wunschzeit: nur Zeiten innerhalb der Öffnungszeiten (heute), frühestens in 30 Minuten */
+(()=>{const sel=$("c-time"),hm=m=>pad(Math.floor(m/60))+":"+pad(m%60);
+function wins(){const now=new Date(),today=ymd(now),w=[];
+if(OVERRIDE&&OVERRIDE.state&&OVERRIDE.expires>Date.now()){if(OVERRIDE.state==="closed")return[];w.push([0,1440])}
+const reg=HOURS[now.getDay()];if(reg)w.push([mins(reg[0]),mins(reg[1])]);
+EVENTS.filter(e=>e.date===today&&/^\d{1,2}:\d{2}$/.test(e.open||"")).forEach(e=>w.push([mins(e.open),1440]));return w}
+function fill(){const now=new Date(),start=now.getHours()*60+now.getMinutes()+30,set=new Set(),cur=sel.value;
+wins().forEach(([a,b])=>{for(let m=Math.ceil(Math.max(a,start)/15)*15;m<b;m+=15)set.add(m)});
+const list=[...set].sort((a,b)=>a-b).map(hm);
+const html='<option value="">So schnell wie möglich</option>'+list.map(t=>'<option value="'+t+'">'+t+' Uhr</option>').join("");
+if(sel.dataset.h!==html){sel.innerHTML=html;sel.dataset.h=html;sel.value=list.includes(cur)?cur:""}}
+const _rc=renderCart;renderCart=function(){_rc();fill()};setInterval(()=>{if($("cart").open)fill()},30000);fill();})();
+</script><script>
+/* Kundenkonto: Anmeldung per E-Mail-Code, gespeicherte Daten, letzte Bestellung */
+(()=>{let TOK=store.get("acctTok")||"",PROF=null,ON=false;window.ACCT_TOKEN=TOK;
+const box=$("acct-box"),d=$("acct"),am=$("a-mail"),ac=$("a-code"),amsg=$("a-msg");
+const P=(p,b)=>fetch("/api/acct/"+p,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b)});
+const okm=s=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
+function fillForm(p){if(!p)return;const set=(id,v)=>{const e=$(id);if(e&&v&&!e.value.trim())e.value=v};
+set("c-name",p.name);set("c-mail",p.email);set("c-phone",p.phone);set("c-street",p.street);set("c-hnr",p.hnr);set("c-plz",p.plz);
+if(p.city&&(!$("c-city").value.trim()||$("c-city").value.trim()==="Krefeld"))$("c-city").value=p.city;
+if(window.addrComp)addrComp()}
+function lastCart(){const c=PROF&&PROF.last&&PROF.last.cart;return (c||[]).filter(x=>{try{return !!itemOf(x.key)}catch(e){return false}}).map(x=>({id:x.key+"|"+JSON.stringify(x.sel||{})+"|"+(x.note||""),key:x.key,sel:x.sel||{},note:x.note||"",qty:x.qty}))}
+function draw(){box.hidden=!ON;if(!ON)return;
+if(!PROF){box.innerHTML='<button type="button" class="btn ghost" id="acct-login" style="width:100%">👤 Anmelden: Daten speichern und nächstes Mal schneller bestellen</button>';return}
+const lc=lastCart(),n=lc.reduce((s,x)=>s+x.qty,0);
+box.innerHTML='<div class="legal" style="margin:0">👤 Angemeldet als <b>'+esc(PROF.email)+'</b><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">'+(n?'<button type="button" class="btn ghost" id="acct-again" style="padding:8px 14px">🔁 Letzte Bestellung wiederholen ('+n+' Artikel)</button>':'')+'<button type="button" class="btn ghost" id="acct-out" style="padding:8px 14px">Abmelden</button><button type="button" class="btn ghost" id="acct-del" style="padding:8px 14px">Konto löschen</button></div></div>'}
+function logoutLocal(){TOK="";PROF=null;store.del("acctTok");window.ACCT_TOKEN="";draw()}
+document.addEventListener("click",async e=>{
+if(e.target.closest("#acct-login")){am.value=$("c-mail").value.trim();ac.value="";$("a-code-wrap").hidden=true;$("a-go").hidden=true;$("a-send").textContent="Code per E-Mail senden";amsg.textContent="";d.showModal();am.focus();return}
+if(e.target.closest("#acct-again")){const c=lastCart();if(!c.length)return;CART=c;if(PROF.last.fulfil)setFulfil(PROF.last.fulfil);persist();renderCart();$("cart-msg").textContent="Deine letzte Bestellung ist im Warenkorb. Bitte prüfe sie kurz.";return}
+if(e.target.closest("#acct-out")){try{await P("logout",{token:TOK})}catch(x){}logoutLocal();$("cart-msg").textContent="Du bist abgemeldet.";return}
+const del=e.target.closest("#acct-del");
+if(del){if(!del.dataset.sure){del.dataset.sure="1";del.textContent="Wirklich löschen? Nochmal tippen";return}
+try{const r=await P("delete",{token:TOK});if(!r.ok)throw 0}catch(x){$("cart-msg").textContent="Das Konto konnte gerade nicht gelöscht werden. Bitte versuche es nochmal.";return}
+logoutLocal();$("cart-msg").textContent="Dein Konto und alle dazu gespeicherten Daten wurden gelöscht."}
+});
+$("a-send").onclick=async()=>{const m=am.value.trim();if(!okm(m)){amsg.textContent="Bitte gib eine gültige E-Mail-Adresse an.";return}
+$("a-send").disabled=true;amsg.textContent="Code wird gesendet …";
+try{const r=await P("code",{email:m});const j=await r.json().catch(()=>({}));
+if(r.ok){amsg.textContent="Wir haben dir einen 6-stelligen Code an "+m+" geschickt. Schau auch im Spam-Ordner nach.";$("a-code-wrap").hidden=false;$("a-go").hidden=false;$("a-send").textContent="Code erneut senden";ac.focus()}
+else amsg.textContent=({wait:"Bitte warte eine Minute, bevor du einen neuen Code anforderst.",limit:"Zu viele Versuche. Bitte warte ein paar Minuten.",email:"Bitte gib eine gültige E-Mail-Adresse an."})[j.error]||"Der Code konnte gerade nicht gesendet werden. Bitte versuche es später nochmal."}
+catch(x){amsg.textContent="Der Code konnte gerade nicht gesendet werden."}
+$("a-send").disabled=false};
+$("a-go").onclick=async()=>{const c=ac.value.replace(/\D/g,"");if(c.length!==6){amsg.textContent="Bitte gib den 6-stelligen Code aus der E-Mail ein.";return}
+$("a-go").disabled=true;
+try{const r=await P("verify",{email:am.value.trim(),code:c});const j=await r.json().catch(()=>({}));
+if(r.ok&&j.token){TOK=j.token;store.set("acctTok",TOK);window.ACCT_TOKEN=TOK;PROF=j.profile;fillForm(PROF);draw();d.close();$("cart-msg").textContent="Du bist angemeldet. Deine Daten werden bei der nächsten Bestellung gespeichert."}
+else amsg.textContent=j.error==="expired"?"Der Code ist abgelaufen oder wurde zu oft falsch eingegeben. Bitte fordere einen neuen an.":"Der Code stimmt nicht. Bitte prüfe ihn."}
+catch(x){amsg.textContent="Anmeldung gerade nicht möglich."}
+$("a-go").disabled=false};
+ac.addEventListener("keydown",e=>{if(e.key==="Enter")$("a-go").click()});
+$("a-close").onclick=()=>d.close();
+window.acctRefresh=async()=>{if(!TOK){draw();return}try{const r=await P("me",{token:TOK});if(r.status===401){logoutLocal();return}if(r.ok)PROF=(await r.json()).profile}catch(x){}draw()};
+const _rc=renderCart;renderCart=function(){_rc();draw()};
+fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(async c=>{ON=!!(c&&c.acct);await acctRefresh();fillForm(PROF)}).catch(()=>{});
+})();
 </script></body>
 </html>
