@@ -271,15 +271,18 @@ async function cleanupAccounts(env) {
 const TS_SITEKEY = "0x4AAAAAAGWW3n4r2lnV1yYk";
 async function humanOk(env, token) {
   if (!env.TURNSTILE_SECRET) return true;
-  if (typeof token !== "string" || !token || token.length > 2048) return false;
+  const note = (s) => env.DATA.put("tsstatus", s + " " + new Date().toISOString(), { expirationTtl: 30 * 86400 }).catch(() => {});
+  if (typeof token !== "string" || !token || token.length > 2048) { await note("kein-token"); return false; }
   try {
     const f = new FormData();
-    f.append("secret", env.TURNSTILE_SECRET);
+    f.append("secret", String(env.TURNSTILE_SECRET).trim());
     f.append("response", token);
     const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: f });
     const j = await r.json().catch(() => ({}));
+    // Ergebnis für die Fehlersuche merken (ohne personenbezogene Daten)
+    await note(j.success === true ? "ok" : "fehler " + ((j["error-codes"] || []).join(",") || "http-" + r.status));
     return j.success === true;
-  } catch (e) { return false; }
+  } catch (e) { await note("ausnahme"); return false; }
 }
 async function handleAcct(path, b, req, env) {
   if (!env.DB) return json({ error: "nodb" }, 503);
@@ -695,7 +698,7 @@ async function handleApi(req, env) {
       const o = await getJSON(kv, "o:" + oid);
       return json(o ? { no: o.no || null, paid: !!o.paid } : {});
     }
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.DB, ts: env.TURNSTILE_SECRET ? TS_SITEKEY : "", iv: (await kv.get("invstatus")) || "-" });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.DB, ts: env.TURNSTILE_SECRET ? TS_SITEKEY : "", tsv: (await kv.get("tsstatus")) || "-", iv: (await kv.get("invstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
