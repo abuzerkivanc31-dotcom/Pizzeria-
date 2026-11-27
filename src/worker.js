@@ -109,14 +109,15 @@ async function shortHash(s) {
 }
 
 const okMail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(s || ""));
-// Fortlaufende Bestellnummer (1, 2, 3 ...), dazu ein Verweis Nummer -> Bestellung
-async function setOrderNo(kv, rec) {
+// Fortlaufende Bestellnummern: online bezahlt O1, O2 ...; Zahlung vor Ort und WhatsApp-Anfragen 1, 2 ...
+async function setOrderNo(kv, rec, online) {
   if (rec.no) return rec.no;
-  const n = (Number(await kv.get("ordseq")) || 0) + 1;
-  await kv.put("ordseq", String(n));
-  rec.no = n;
-  await kv.put("on:" + n, rec.id, { expirationTtl: ORDER_TTL_S });
-  return n;
+  const key = online ? "ordseq_o" : "ordseq";
+  const n = (Number(await kv.get(key)) || 0) + 1;
+  await kv.put(key, String(n));
+  rec.no = (online ? "O" : "") + n;
+  await kv.put("on:" + rec.no, rec.id, { expirationTtl: ORDER_TTL_S });
+  return rec.no;
 }
 // Wunschzeit: leer (= so schnell wie möglich) oder "HH:MM" heute, innerhalb der Öffnungszeiten (gleiche Regeln wie die Seite)
 async function checkWish(env, t) {
@@ -179,78 +180,183 @@ async function saveOrder(b, req, env) {
     phone: str(String(b.phone || "").replace(/[^\d+ ]/g, ""), 20),
     pay: "wa",
   };
-  await setOrderNo(kv, rec);
+  await setOrderNo(kv, rec, false);
   await setJSON(kv, "o:" + id, rec, { expirationTtl: ORDER_TTL_S });
   await sendConfirm(env, rec);
-  await saveAcctFromOrder(env, b.token, { name, phone: rec.phone, ...(lief ? addrPartsOf(b) : {}), fulfil: rec.type, cart: cartOf(b.cart) });
+  await saveAcctFromOrder(env, b.token, { name, phone: rec.phone, ...(lief ? addrPartsOf(b) : {}), fulfil: rec.type, cart: cartOf(b.cart) }, rec);
   return json({ ok: true, no: rec.no });
 }
 
-// ---------- Kundenkonto: Anmeldung per E-Mail-Code (ohne Passwort) ----------
-// Gespeichert: E-Mail, Name, Telefon, Adresse, letzte Bestellung. Löschung per Knopf oder nach 2 Jahren ohne Nutzung.
-const ACC_TTL = 730 * 86400, SESS_TTL = 180 * 86400;
-const accKey = async (email) => "acc:" + (await shortHash("acc:" + String(email).trim().toLowerCase()));
+// ---------- Kundenkonten: Datenbank Cloudflare D1 ("pizzeria-kunden", Speicherort EU), Anmeldung mit E-Mail und Passwort ----------
+// Tabellen: customers (Konten), sessions (Anmeldungen), cust_orders (Bestellverlauf je Konto).
+// Konten, die 2 Jahre nicht genutzt werden, löscht die Zeitsteuerung automatisch.
+const ACC_INACTIVE_MS = 730 * 86400000, SESS_MS = 180 * 86400000;
 const rndHex = (n) => [...crypto.getRandomValues(new Uint8Array(n))].map((x) => x.toString(16).padStart(2, "0")).join("");
+let dbInit = false;
+async function db(env) {
+  if (!env.DB) throw new Error("nodb");
+  if (!dbInit) {
+    await env.DB.batch([
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE COLLATE NOCASE, pw TEXT NOT NULL, salt TEXT NOT NULL, name TEXT DEFAULT '', phone TEXT DEFAULT '', street TEXT DEFAULT '', hnr TEXT DEFAULT '', plz TEXT DEFAULT '', city TEXT DEFAULT '', fulfil TEXT DEFAULT '', created INTEGER NOT NULL, last_seen INTEGER NOT NULL)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, cid INTEGER NOT NULL, expires INTEGER NOT NULL)"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS cust_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, cid INTEGER NOT NULL, order_id TEXT NOT NULL UNIQUE, no TEXT, t INTEGER NOT NULL, type TEXT, pay TEXT, total REAL, lines TEXT, cart TEXT)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_sess_cid ON sessions(cid)"),
+      env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_co_cid ON cust_orders(cid, t)"),
+    ]);
+    dbInit = true;
+  }
+  return env.DB;
+}
+// Passwort nur als PBKDF2-Prüfwert (SHA-256, 100.000 Runden, eigenes Salz) speichern
+async function pwHash(pw, saltHex) {
+  const salt = saltHex ? new Uint8Array(saltHex.match(/../g).map((h) => parseInt(h, 16))) : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(String(pw)), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 100000 }, key, 256);
+  const hex = (u) => [...u].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return { hash: hex(new Uint8Array(bits)), salt: hex(salt) };
+}
+const okPw = (p) => typeof p === "string" && p.length >= 8 && p.length <= 200;
+async function newSession(D, cid) {
+  const token = rndHex(24);
+  await D.prepare("INSERT INTO sessions (token, cid, expires) VALUES (?, ?, ?)").bind(token, cid, Date.now() + SESS_MS).run();
+  return token;
+}
 async function acctFromToken(env, token) {
-  if (typeof token !== "string" || !/^[a-f0-9]{48}$/.test(token)) return null;
-  const k = await env.DATA.get("asess:" + token);
-  if (!k) return null;
-  const p = await getJSON(env.DATA, k);
-  return p ? { key: k, p } : null;
-}
-async function saveAcctFromOrder(env, token, d) {
   try {
-    if (!token) return;
-    const a = await acctFromToken(env, token);
-    if (!a) return;
-    const p = a.p;
-    for (const f of ["name", "phone", "street", "hnr", "plz", "city"]) if (d[f]) p[f] = d[f];
-    if (d.fulfil) p.fulfil = d.fulfil;
-    if (d.cart) p.last = { t: Date.now(), fulfil: d.fulfil, cart: d.cart };
-    await setJSON(env.DATA, a.key, p, { expirationTtl: ACC_TTL });
-  } catch (e) {}
+    if (!env.DB || typeof token !== "string" || !/^[a-f0-9]{48}$/.test(token)) return null;
+    const D = await db(env);
+    return (await D.prepare("SELECT c.* FROM sessions s JOIN customers c ON c.id = s.cid WHERE s.token = ? AND s.expires > ?").bind(token, Date.now()).first()) || null;
+  } catch (e) { return null; }
 }
-const pubProfile = (p) => ({ email: p.email, name: p.name || "", phone: p.phone || "", street: p.street || "", hnr: p.hnr || "", plz: p.plz || "", city: p.city || "", fulfil: p.fulfil || "", last: p.last || null });
+const pubProfile = (c) => ({ email: c.email, name: c.name || "", phone: c.phone || "", street: c.street || "", hnr: c.hnr || "", plz: c.plz || "", city: c.city || "", fulfil: c.fulfil || "" });
+async function custOrders(D, cid, n) {
+  const r = await D.prepare("SELECT no, t, type, pay, total, lines, cart FROM cust_orders WHERE cid = ? ORDER BY t DESC LIMIT ?").bind(cid, n).all();
+  const pj = (s, d) => { try { return JSON.parse(s); } catch (e) { return d; } };
+  return (r.results || []).map((o) => ({ no: o.no, t: o.t, type: o.type, pay: o.pay, total: o.total, lines: pj(o.lines, []), cart: pj(o.cart, null) }));
+}
+async function addCustOrder(env, cid, rec, cart) {
+  try {
+    const D = await db(env);
+    const total = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0) + (rec.tip || 0);
+    await D.prepare("INSERT OR IGNORE INTO cust_orders (cid, order_id, no, t, type, pay, total, lines, cart) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(cid, rec.id, String(rec.no || ""), rec.t, rec.type || "", rec.pay === "wa" ? "wa" : rec.paid ? "online" : "vorort", Math.round(total * 100) / 100, JSON.stringify(rec.lines || []), JSON.stringify(cart || null)).run();
+  } catch (e) { console.log("Kundenbestellung", String(e)); }
+}
+// Bei einer Bestellung mit Anmeldung: Angaben im Konto aktualisieren und die Bestellung in den Verlauf schreiben
+async function saveAcctFromOrder(env, token, d, rec) {
+  try {
+    const c = await acctFromToken(env, token);
+    if (!c) return null;
+    const D = await db(env);
+    const v = (f) => (d[f] ? String(d[f]) : c[f] || "");
+    await D.prepare("UPDATE customers SET name = ?, phone = ?, street = ?, hnr = ?, plz = ?, city = ?, fulfil = ?, last_seen = ? WHERE id = ?").bind(v("name"), v("phone"), v("street"), v("hnr"), v("plz"), v("city"), d.fulfil || c.fulfil || "", Date.now(), c.id).run();
+    if (rec) await addCustOrder(env, c.id, rec, d.cart);
+    return c.id;
+  } catch (e) { return null; }
+}
+async function deleteCustomer(D, id) {
+  await D.batch([D.prepare("DELETE FROM cust_orders WHERE cid = ?").bind(id), D.prepare("DELETE FROM sessions WHERE cid = ?").bind(id), D.prepare("DELETE FROM customers WHERE id = ?").bind(id)]);
+}
+async function cleanupAccounts(env) {
+  try {
+    if (!env.DB) return;
+    const D = await db(env);
+    const r = await D.prepare("SELECT id FROM customers WHERE last_seen < ?").bind(Date.now() - ACC_INACTIVE_MS).all();
+    for (const x of r.results || []) await deleteCustomer(D, x.id);
+    await D.prepare("DELETE FROM sessions WHERE expires < ?").bind(Date.now()).run();
+  } catch (e) { console.log("Konten-Aufräumen", String(e)); }
+}
 async function handleAcct(path, b, req, env) {
-  const kv = env.DATA;
-  if (path === "/acct/code") {
-    if (!env.RESEND_API_KEY) return json({ error: "nomail" }, 503);
-    const email = str(b.email, 120);
+  if (!env.DB) return json({ error: "nodb" }, 503);
+  const D = await db(env);
+  const kv = env.DATA, now = Date.now();
+  const email = str(b.email, 120).toLowerCase();
+  const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
+  const limited = async (k, n) => {
+    const key = "acl:" + k + ":" + ipHash + ":" + Math.floor(now / 600000);
+    const c = Number((await kv.get(key)) || 0);
+    if (c >= n) return true;
+    await kv.put(key, String(c + 1), { expirationTtl: 1200 });
+    return false;
+  };
+  const byMail = () => (okMail(email) ? D.prepare("SELECT * FROM customers WHERE email = ?").bind(email).first() : null);
+  if (path === "/acct/register") {
+    if (await limited("reg", 5)) return json({ error: "limit" }, 429);
+    const name = str(b.name, 80);
     if (!okMail(email)) return json({ error: "email" }, 400);
-    const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
-    const rlKey = "acr:" + ipHash + ":" + Math.floor(Date.now() / 600000);
-    const cnt = Number((await kv.get(rlKey)) || 0);
-    if (cnt >= 6) return json({ error: "limit" }, 429);
-    await kv.put(rlKey, String(cnt + 1), { expirationTtl: 1200 });
-    const ck = "acode:" + (await accKey(email)).slice(4);
-    const old = await getJSON(kv, ck);
-    if (old && Date.now() - old.at < 60000) return json({ error: "wait" }, 429);
-    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
-    await setJSON(kv, ck, { code, at: Date.now(), tries: 0 }, { expirationTtl: 900 });
-    const ok = await sendMail(env, email, "Dein Anmeldecode: " + code, "Hallo,\n\ndein Anmeldecode für pizzeria-koenigspalast.de lautet:\n\n" + code + "\n\nDer Code gilt 15 Minuten. Wenn du dich nicht anmelden wolltest, kannst du diese E-Mail einfach ignorieren.\n\nPizza & Baguettehaus am Königspalast");
-    return ok ? json({ ok: true }) : json({ error: "send" }, 502);
+    if (!name) return json({ error: "name" }, 400);
+    if (!okPw(b.password)) return json({ error: "pw" }, 400);
+    if (await byMail()) return json({ error: "exists" }, 409);
+    const h = await pwHash(b.password);
+    const r = await D.prepare("INSERT INTO customers (email, pw, salt, name, created, last_seen) VALUES (?, ?, ?, ?, ?, ?)").bind(email, h.hash, h.salt, name, now, now).run();
+    const cid = r.meta.last_row_id;
+    const token = await newSession(D, cid);
+    if (env.RESEND_API_KEY) await sendMail(env, email, "Willkommen: Dein Kundenkonto ist eingerichtet", "Hallo " + name + ",\n\ndein Kundenkonto bei pizzeria-koenigspalast.de ist eingerichtet. Ab jetzt sind deine Angaben beim Bestellen schon ausgefüllt, und unter „Mein Konto“ findest du alle deine Bestellungen.\n\nWenn du dieses Konto nicht angelegt hast, antworte bitte auf diese E-Mail. Wir löschen es dann.\n\nPizza & Baguettehaus am Königspalast");
+    return json({ token, profile: pubProfile({ email, name }), orders: [] });
   }
-  if (path === "/acct/verify") {
-    const email = str(b.email, 120);
-    const code = String(b.code || "").replace(/\D/g, "");
-    if (!okMail(email) || code.length !== 6) return json({ error: "code" }, 400);
-    const k = await accKey(email), ck = "acode:" + k.slice(4);
-    const c = await getJSON(kv, ck);
-    if (!c || c.tries >= 5) return json({ error: "expired" }, 400);
-    if (!same(code, c.code)) { c.tries++; await setJSON(kv, ck, c, { expirationTtl: 900 }); await sleep(500); return json({ error: "code" }, 400); }
+  if (path === "/acct/login") {
+    if (await limited("login", 10)) return json({ error: "limit" }, 429);
+    const c = await byMail();
+    const ok = c && same((await pwHash(String(b.password || ""), c.salt)).hash, c.pw);
+    if (!ok) { await sleep(600); return json({ error: "login" }, 401); }
+    await D.prepare("UPDATE customers SET last_seen = ? WHERE id = ?").bind(now, c.id).run();
+    const token = await newSession(D, c.id);
+    return json({ token, profile: pubProfile(c), orders: await custOrders(D, c.id, 30) });
+  }
+  if (path === "/acct/reset-code") {
+    if (!env.RESEND_API_KEY) return json({ error: "nomail" }, 503);
+    if (await limited("rc", 5)) return json({ error: "limit" }, 429);
+    if (!okMail(email)) return json({ error: "email" }, 400);
+    const c = await byMail();
+    if (c) {
+      const ck = "pwr:" + c.id;
+      const old = await getJSON(kv, ck);
+      if (old && now - old.at < 60000) return json({ error: "wait" }, 429);
+      const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+      await setJSON(kv, ck, { code, at: now, tries: 0 }, { expirationTtl: 900 });
+      await sendMail(env, c.email, "Dein Code für ein neues Passwort: " + code, "Hallo " + (c.name || "") + ",\n\nmit diesem Code kannst du auf pizzeria-koenigspalast.de ein neues Passwort festlegen:\n\n" + code + "\n\nDer Code gilt 15 Minuten. Wenn du das nicht angefordert hast, kannst du diese E-Mail ignorieren.\n\nPizza & Baguettehaus am Königspalast");
+    }
+    return json({ ok: true });
+  }
+  if (path === "/acct/reset") {
+    if (await limited("rs", 10)) return json({ error: "limit" }, 429);
+    if (!okPw(b.password)) return json({ error: "pw" }, 400);
+    const c = await byMail();
+    const ck = c ? "pwr:" + c.id : "";
+    const k = c ? await getJSON(kv, ck) : null;
+    if (!k || k.tries >= 5) return json({ error: "expired" }, 400);
+    if (!same(String(b.code || "").replace(/\D/g, ""), k.code)) { k.tries++; await setJSON(kv, ck, k, { expirationTtl: 900 }); await sleep(500); return json({ error: "code" }, 400); }
     await kv.delete(ck);
-    const p = (await getJSON(kv, k)) || { created: Date.now() };
-    p.email = email;
-    await setJSON(kv, k, p, { expirationTtl: ACC_TTL });
-    const token = rndHex(24);
-    await kv.put("asess:" + token, k, { expirationTtl: SESS_TTL });
-    return json({ token, profile: pubProfile(p) });
+    const h = await pwHash(b.password);
+    await D.batch([D.prepare("UPDATE customers SET pw = ?, salt = ?, last_seen = ? WHERE id = ?").bind(h.hash, h.salt, now, c.id), D.prepare("DELETE FROM sessions WHERE cid = ?").bind(c.id)]);
+    const token = await newSession(D, c.id);
+    return json({ token, profile: pubProfile(c), orders: await custOrders(D, c.id, 30) });
   }
-  const a = await acctFromToken(env, b.token);
-  if (!a) return json({ error: "auth" }, 401);
-  if (path === "/acct/me") return json({ profile: pubProfile(a.p) });
-  if (path === "/acct/logout") { await kv.delete("asess:" + b.token); return json({ ok: true }); }
-  if (path === "/acct/delete") { await kv.delete(a.key); await kv.delete("asess:" + b.token); return json({ ok: true }); }
+  const c = await acctFromToken(env, b.token);
+  if (!c) return json({ error: "auth" }, 401);
+  if (path === "/acct/me") {
+    await D.prepare("UPDATE customers SET last_seen = ? WHERE id = ?").bind(now, c.id).run();
+    return json({ profile: pubProfile(c), orders: await custOrders(D, c.id, 30) });
+  }
+  if (path === "/acct/update") {
+    const p = { name: str(b.name, 80), phone: str(String(b.phone || "").replace(/[^\d+ ]/g, ""), 20), ...addrPartsOf(b) };
+    if (!p.name) return json({ error: "name" }, 400);
+    await D.prepare("UPDATE customers SET name = ?, phone = ?, street = ?, hnr = ?, plz = ?, city = ?, last_seen = ? WHERE id = ?").bind(p.name, p.phone, p.street, p.hnr, p.plz, p.city, now, c.id).run();
+    return json({ profile: pubProfile({ ...c, ...p }) });
+  }
+  if (path === "/acct/password") {
+    if (!same((await pwHash(String(b.old || ""), c.salt)).hash, c.pw)) { await sleep(600); return json({ error: "oldpw" }, 403); }
+    if (!okPw(b.password)) return json({ error: "pw" }, 400);
+    const h = await pwHash(b.password);
+    await D.batch([D.prepare("UPDATE customers SET pw = ?, salt = ?, last_seen = ? WHERE id = ?").bind(h.hash, h.salt, now, c.id), D.prepare("DELETE FROM sessions WHERE cid = ? AND token != ?").bind(c.id, b.token)]);
+    return json({ ok: true });
+  }
+  if (path === "/acct/logout") { await D.prepare("DELETE FROM sessions WHERE token = ?").bind(b.token).run(); return json({ ok: true }); }
+  if (path === "/acct/delete") {
+    if (!same((await pwHash(String(b.password || ""), c.salt)).hash, c.pw)) { await sleep(600); return json({ error: "oldpw" }, 403); }
+    await deleteCustomer(D, c.id);
+    return json({ ok: true });
+  }
   return json({ error: "not found" }, 404);
 }
 
@@ -412,15 +518,15 @@ async function handleCheckout(b, req, env) {
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
   if (vorOrt) {
     const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, invEmail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
-    await setOrderNo(kv, rec);
+    await setOrderNo(kv, rec, false);
     await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
     await addLedger(env, rec);
     await notifyTelegram(env, rec);
     await sendConfirm(env, rec);
-    await saveAcctFromOrder(env, b.token, acctData);
+    await saveAcctFromOrder(env, b.token, acctData, rec);
     return json({ ok: true, no: rec.no });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, cid: ((await acctFromToken(env, b.token)) || {}).id || null, cart: acctData.cart, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -533,7 +639,7 @@ async function handleStripeWebhook(req, env) {
       const rec = pend
         ? { ...pend, paid: true, paidAt: Date.now(), amount: s.amount_total, phone: pend.phone || phone }
         : { id, t: Date.now(), name: str((s.customer_details && s.customer_details.name) || "Unbekannt", 80), type: "Abholung", addr: "", time: "", note: "Bestelldetails fehlen, bitte in Stripe prüfen", lines: ["(Bezahlte Bestellung, Details siehe Stripe)"], total: (s.amount_total || 0) / 100, fee: 0, km: 0, paid: true, paidAt: Date.now(), phone };
-      await setOrderNo(kv, rec);
+      await setOrderNo(kv, rec, true);
       await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
       if (pend) await kv.delete(`p:${id}`);
       if ((await notifyTelegram(env, rec)) === "ok") { rec.tgDone = true; await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S }); }
@@ -545,6 +651,7 @@ async function handleStripeWebhook(req, env) {
       await sendInvoice(env, await getJSON(kv, "o:" + id));
       await addLedger(env, await getJSON(kv, "o:" + id));
       await sendConfirm(env, await getJSON(kv, "o:" + id));
+      { const fin = await getJSON(kv, "o:" + id); if (fin && fin.cid) await addCustOrder(env, fin.cid, fin, fin.cart); }
     }
   }
   return json({ received: true });
@@ -570,7 +677,7 @@ async function handleApi(req, env) {
       const o = await getJSON(kv, "o:" + oid);
       return json(o ? { no: o.no || null, paid: !!o.paid } : {});
     }
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.RESEND_API_KEY, iv: (await kv.get("invstatus")) || "-" });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.DB, iv: (await kv.get("invstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
@@ -620,6 +727,20 @@ async function handleApi(req, env) {
       const count = Math.floor(Number(b.count));
       if (!(score >= 0 && score <= 10) || !(count >= 1 && count <= 1000000)) return json({ error: "invalid" }, 400);
       await setJSON(kv, "rating", { score: score.toFixed(1).replace(".", ","), count, updated: Date.now() });
+      return json({ ok: true });
+    }
+    if (path === "/customers/list") {
+      if (!isOwner) return json({ error: "forbidden" }, 403);
+      if (!env.DB) return json({ customers: [] });
+      const D = await db(env);
+      const r = await D.prepare("SELECT c.id, c.email, c.name, c.phone, c.street, c.hnr, c.plz, c.city, c.created, c.last_seen, COUNT(o.id) AS n, MAX(o.t) AS last_order, COALESCE(SUM(CASE WHEN o.pay != 'wa' THEN o.total ELSE 0 END), 0) AS sum FROM customers c LEFT JOIN cust_orders o ON o.cid = c.id GROUP BY c.id ORDER BY c.created DESC LIMIT 2000").all();
+      return json({ customers: r.results || [] });
+    }
+    if (path === "/customers/delete") {
+      if (!isOwner) return json({ error: "forbidden" }, 403);
+      const id = Math.floor(Number(b.id));
+      if (!env.DB || !(id > 0)) return json({ error: "invalid" }, 400);
+      await deleteCustomer(await db(env), id);
       return json({ ok: true });
     }
     if (path === "/orders/list") {
@@ -724,8 +845,8 @@ async function tgUpdates(env, kv, ids) {
         if (ids.includes(from) && (parts[0] === "ja" || parts[0] === "nein")) out.push({ ans: parts[0], id: parts[1] });
       } else if (u.message && u.message.text && ids.includes(String(u.message.chat.id))) {
         const raw = u.message.text.trim().toLowerCase();
-        const pm = raw.match(/^(?:nr\.?\s*|#)?(\d{1,6})\s*(?:ist\s+)?bezahlt[.!]?$/) || raw.match(/^bezahlt:?\s*(?:nr\.?\s*|#)?(\d{1,6})[.!]?$/);
-        if (pm) { await markPaid(env, Number(pm[1]), String(u.message.chat.id)); continue; }
+        const pm = raw.match(/^(?:nr\.?\s*|#)?(o?\d{1,6})\s*(?:ist\s+)?bezahlt[.!]?$/) || raw.match(/^bezahlt:?\s*(?:nr\.?\s*|#)?(o?\d{1,6})[.!]?$/);
+        if (pm) { await markPaid(env, pm[1].toUpperCase(), String(u.message.chat.id)); continue; }
         const tx = raw.replace(/[^a-zäöü]/g, "");
         if (tx === "ja" || tx === "nein") out.push({ ans: tx, at: u.message.date * 1000 });
       }
@@ -928,7 +1049,7 @@ function buildInvoicePdf(rec, logo) {
       if (logo) { const lh = 44, lw = (logo.w / logo.h) * lh; c.push("q " + lw.toFixed(2) + " 0 0 " + lh + " " + L + " 768 cm /Im1 Do Q"); sl.forEach((s, i) => T(s, L, 755 - i * 11.5, 8.5, false, true)); }
       else { T(SELLER.name, L, 790, 13, true); sl.forEach((s, i) => T(s, L, 775 - i * 12.5, 9, false, true)); }
       T("RECHNUNG", R, 790, 22, true, false, true);
-      [["Rechnungsnummer", no], ["Rechnungsdatum", dfmt(inDate)], ["Leistungsdatum", dfmt(inDate)], ["Bestellt am", tfmt(rec.t)]].concat(rec.no ? [["Bestellnummer", String(rec.no)]] : []).forEach((p, i) => { T(p[0], 400, 764 - i * 14, 9, false, true); T(p[1], R, 764 - i * 14, 10, true, false, true); });
+      [["Rechnungsnummer", no], ["Rechnungsdatum", dfmt(inDate)], ["Leistungsdatum", dfmt(inDate)], ["Bestellt am", tfmt(rec.t)]].forEach((p, i) => { T(p[0], 400, 764 - i * 14, 9, false, true); T(p[1], R, 764 - i * 14, 10, true, false, true); });
       T(SELLER.name + " · " + SELLER.street + " · " + SELLER.city, L, 696, 7, false, true);
       let yy = 681;
       T(rec.name || "Kunde", L, yy, 11, true);
@@ -1200,6 +1321,6 @@ export default {
   // Cron: "0 */6 * * *" = 00:00, 06:00, 12:00, 18:00 UTC
   async scheduled(event, env, ctx) {
     if (event.cron === "*/2 * * * *") ctx.waitUntil(Promise.all([runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))), refreshRating(env)]));
-    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env)]));
+    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env), cleanupAccounts(env)]));
   },
 };
