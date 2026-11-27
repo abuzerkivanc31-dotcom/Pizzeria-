@@ -13,6 +13,12 @@ run_worker_first = ["/api/*"]
 binding = "DATA"
 id = "b1e5fecb198e4efca05c850caed83606"
 
+# Datenbank für Kundenkonten (Cloudflare D1, Speicherort EU)
+[[d1_databases]]
+binding = "DB"
+database_name = "pizzeria-kunden"
+database_id = "336870be-95ec-4222-a039-69ebf7171eb3"
+
 # Alle 6 Stunden Eventtage der YAYLA Arena aktualisieren; alle 2 Minuten die Rückfrage "noch geöffnet?" bei Veranstaltungen
 [triggers]
 crons = ["0 */6 * * *", "*/2 * * * *"]
