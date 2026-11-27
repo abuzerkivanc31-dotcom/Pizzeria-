@@ -266,6 +266,21 @@ async function cleanupAccounts(env) {
     await D.prepare("DELETE FROM sessions WHERE expires < ?").bind(Date.now()).run();
   } catch (e) { console.log("Konten-Aufräumen", String(e)); }
 }
+// Roboter-Prüfung (Cloudflare Turnstile) für Anmelden, Registrieren und "Passwort vergessen".
+// Aktiv, sobald das Secret TURNSTILE_SECRET gesetzt ist; vorher wird nicht geprüft.
+const TS_SITEKEY = "0x4AAAAAAGWW3n4r2lnV1yYk";
+async function humanOk(env, token) {
+  if (!env.TURNSTILE_SECRET) return true;
+  if (typeof token !== "string" || !token || token.length > 2048) return false;
+  try {
+    const f = new FormData();
+    f.append("secret", env.TURNSTILE_SECRET);
+    f.append("response", token);
+    const r = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: f });
+    const j = await r.json().catch(() => ({}));
+    return j.success === true;
+  } catch (e) { return false; }
+}
 async function handleAcct(path, b, req, env) {
   if (!env.DB) return json({ error: "nodb" }, 503);
   const D = await db(env);
@@ -282,6 +297,7 @@ async function handleAcct(path, b, req, env) {
   const byMail = () => (okMail(email) ? D.prepare("SELECT * FROM customers WHERE email = ?").bind(email).first() : null);
   if (path === "/acct/register") {
     if (await limited("reg", 5)) return json({ error: "limit" }, 429);
+    if (!(await humanOk(env, b.cf))) return json({ error: "bot" }, 403);
     const name = str(b.name, 80);
     if (!okMail(email)) return json({ error: "email" }, 400);
     if (!name) return json({ error: "name" }, 400);
@@ -296,6 +312,7 @@ async function handleAcct(path, b, req, env) {
   }
   if (path === "/acct/login") {
     if (await limited("login", 10)) return json({ error: "limit" }, 429);
+    if (!(await humanOk(env, b.cf))) return json({ error: "bot" }, 403);
     const c = await byMail();
     const ok = c && same((await pwHash(String(b.password || ""), c.salt)).hash, c.pw);
     if (!ok) { await sleep(600); return json({ error: "login" }, 401); }
@@ -306,6 +323,7 @@ async function handleAcct(path, b, req, env) {
   if (path === "/acct/reset-code") {
     if (!env.RESEND_API_KEY) return json({ error: "nomail" }, 503);
     if (await limited("rc", 5)) return json({ error: "limit" }, 429);
+    if (!(await humanOk(env, b.cf))) return json({ error: "bot" }, 403);
     if (!okMail(email)) return json({ error: "email" }, 400);
     const c = await byMail();
     if (c) {
@@ -677,7 +695,7 @@ async function handleApi(req, env) {
       const o = await getJSON(kv, "o:" + oid);
       return json(o ? { no: o.no || null, paid: !!o.paid } : {});
     }
-    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.DB, iv: (await kv.get("invstatus")) || "-" });
+    if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.DB, ts: env.TURNSTILE_SECRET ? TS_SITEKEY : "", iv: (await kv.get("invstatus")) || "-" });
     return json({ error: "not found" }, 404);
   }
 
