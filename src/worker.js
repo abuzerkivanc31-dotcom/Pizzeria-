@@ -170,7 +170,7 @@ async function opsCommand(env, raw) {
   const save = () => setJSON(kv, "ops", ops);
   const t = raw.replace(/\s+/g, " ").trim();
   const status = () => "Aktueller Stand:\n⏱ Wartezeit: " + (ops.wait ? ops.wait + " Minuten" : "normal") + "\n🛵 Lieferung: " + (ops.delOff ? "PAUSIERT" : "an") + "\n⛔ Ausverkauft: " + ((ops.out || []).join(", ") || "nichts");
-  if (/^(hilfe|befehle|\/start|\/help)$/.test(t)) return "So steuerst du die Website per Nachricht:\n• „wartezeit 45“ – Zubereitungszeit auf 45 Minuten setzen (gilt für Lieferzeit-Mails)\n• „wartezeit normal“ – zurück auf normal\n• „lieferung aus“ / „lieferung an“ – Lieferung pausieren oder wieder an\n• „sucuk aus“ – alles mit Sucuk ausverkauft\n• „sucuk an“ – wieder verfügbar\n• „alles an“ – nichts mehr ausverkauft\n• „12 bezahlt“ – Vor-Ort-Bestellung 12 als bezahlt markieren\n• „status“ – aktueller Stand";
+  if (/^(hilfe|befehle|\/start|\/help)$/.test(t)) return "So steuerst du die Website per Nachricht:\n• „wartezeit 45“ – Zubereitungszeit auf 45 Minuten setzen (gilt für Lieferzeit-Mails)\n• „wartezeit normal“ – zurück auf normal\n• „lieferung aus“ / „lieferung an“ – Lieferung pausieren oder wieder an\n• „sucuk aus“ – alles mit Sucuk ausverkauft\n• „sucuk an“ – wieder verfügbar\n• „alles an“ – nichts mehr ausverkauft\n• „12 bezahlt“ – Vor-Ort-Bestellung 12 als bezahlt markieren\n• „status“ – aktueller Stand\n• „check“ – alle Funktionen der Website jetzt prüfen";
   if (t === "status") return status();
   let m = t.match(/^warte?zeit:? (\d{1,3})(?: ?min(?:uten)?)?$/);
   if (m) { const n = Number(m[1]); if (n < 10 || n > 180) return "Bitte eine Wartezeit zwischen 10 und 180 Minuten angeben."; ops.wait = n; await save(); return "⏱ Wartezeit ist jetzt " + n + " Minuten. Kunden sehen das auf der Website und in der Lieferzeit-Mail."; }
@@ -1024,6 +1024,7 @@ async function tgUpdates(env, kv, ids) {
         const raw = u.message.text.trim().toLowerCase();
         const pm = raw.match(/^(?:nr\.?\s*|#)?(o?\d{1,6})\s*(?:ist\s+)?bezahlt[.!]?$/) || raw.match(/^bezahlt:?\s*(?:nr\.?\s*|#)?(o?\d{1,6})[.!]?$/);
         if (pm) { await markPaid(env, pm[1].toUpperCase(), String(u.message.chat.id)); continue; }
+        if (/^(check|prüfen|pruefen|test|selbsttest)$/.test(raw)) { await tgApi(env, "sendMessage", { chat_id: String(u.message.chat.id), text: (await selfCheck(env, true)).slice(0, 4000) }); continue; }
         const oc = await opsCommand(env, raw);
         if (oc) { await tgApi(env, "sendMessage", { chat_id: String(u.message.chat.id), text: oc }); continue; }
         const tx = raw.replace(/[^a-zäöü]/g, "");
@@ -1285,9 +1286,40 @@ function buildInvoicePdf(rec, logo) {
   return pdfBuild(pages.map((a) => a.join("\n")), logo);
 }
 function b64(bytes) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); }
+// ---------- Selbsttest: prüft täglich um 07:00 Uhr (06:00 UTC) alle Funktionen, bei Problemen Mail an die Geschäftsmail + Telegram ----------
+async function selfCheck(env, manual) {
+  const kv = env.DATA, res = [], now = Date.now(), H = "https://pizzeria-koenigspalast.de";
+  const step = async (n, fix, fn) => { try { const d = await fn(); res.push({ n, ok: true, d: d || "" }); } catch (e) { res.push({ n, ok: false, d: String((e && e.message) || e).slice(0, 200), fix }); } };
+  const age = (s) => { const m = String(s || "").match(/(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/); return m ? now - Date.parse(m[1]) : Infinity; };
+  await step("Speicher (Cloudflare KV)", "Cloudflare-Status prüfen, KV-Bindung DATA in wrangler.toml prüfen.", async () => { const v = String(now); await kv.put("selftest", v, { expirationTtl: 3600 }); if ((await kv.get("selftest")) !== v) throw new Error("Lesen/Schreiben stimmt nicht überein"); return "ok"; });
+  await step("Website-Dateien", "Letzten GitHub-Commit und Cloudflare-Deployment prüfen.", async () => { const r = await env.ASSETS.fetch(new URL("/", H)); const t = await r.text(); if (!r.ok || !t.includes('id="ck-next"') || !t.includes('id="acct"')) throw new Error("Startseite fehlt oder ist unvollständig (HTTP " + r.status + ")"); return "ok"; });
+  await step("Speisekarte und Preisberechnung", "menu.json auf Tippfehler prüfen (muss gültiges JSON sein).", async () => { const menu = await (await env.ASSETS.fetch(new URL("/menu.json", H))).json(); const PR = ((await getJSON(kv, "prices")) || {}).prices || {}; const p = priceCart(menu, PR, "e", [{ key: "getraenke|0|0", qty: 2, sel: {} }]); if (p.error || !(p.sum > 0)) throw new Error("Preis konnte nicht berechnet werden"); return Object.keys(menu.MENU).length + " Kategorien"; });
+  await step("Kundenkonten (Datenbank D1)", "Cloudflare D1 „pizzeria-kunden“ und die Bindung DB in wrangler.toml prüfen.", async () => { if (!env.DB) throw new Error("Datenbank nicht verbunden"); const r = await (await db(env)).prepare("SELECT COUNT(*) AS n FROM customers").first(); return ((r && r.n) || 0) + " Konten"; });
+  await step("Google Fahrstrecke (Lieferkosten)", "Google Cloud: Abrechnung aktiv? Routes API aktiviert? Schlüssel GOOGLE_MAPS_KEY gültig?", async () => { if (!env.GOOGLE_MAPS_KEY) throw new Error("GOOGLE_MAPS_KEY fehlt"); const r = await routeKm(env, "Westparkstraße 1, 47803 Krefeld"); if (r.error) throw new Error("Routes API antwortet nicht richtig (" + r.error + ")"); return r.km.toFixed(1).replace(".", ",") + " km Testroute"; });
+  await step("Google Adressprüfung (Places)", "Google Cloud: Places API (New) aktiviert und für den Schlüssel erlaubt?", async () => { const r = await fetch("https://places.googleapis.com/v1/places:searchText", { method: "POST", headers: { "content-type": "application/json", "X-Goog-Api-Key": env.GOOGLE_MAPS_KEY || "", "X-Goog-FieldMask": "places.id" }, body: JSON.stringify({ textQuery: "Westparkstraße 102, 47803 Krefeld", languageCode: "de", regionCode: "DE" }) }); if (!r.ok) throw new Error("Places API: HTTP " + r.status); const j = await r.json().catch(() => ({})); if (!(j.places || []).length) throw new Error("Places API findet die Testadresse nicht"); return "ok"; });
+  await step("Google-Bewertung", "Places API prüfen; die Bewertung wird alle 20 Stunden aktualisiert.", async () => { const st = (await kv.get("rtstatus")) || "-"; const rt = await getJSON(kv, "rating"); if (st !== "ok" && st !== "-") throw new Error("Letzte Aktualisierung fehlgeschlagen: " + st); if (rt && rt.updated && now - rt.updated > 3 * 86400000) throw new Error("Bewertung seit über 3 Tagen nicht aktualisiert"); return rt && rt.score ? rt.score + " Sterne" : "ok"; });
+  await step("Online-Zahlung (Stripe)", "Stripe: geheimer Schlüssel STRIPE_SECRET_KEY gültig und mit Berechtigung „Checkout Sessions“?", async () => { if (!env.STRIPE_SECRET_KEY || !env.STRIPE_WEBHOOK_SECRET) throw new Error("Stripe-Schlüssel fehlen"); const r = await fetch("https://api.stripe.com/v1/checkout/sessions?limit=1", { headers: { Authorization: "Bearer " + env.STRIPE_SECRET_KEY } }); if (!r.ok) throw new Error("Stripe antwortet mit HTTP " + r.status + (r.status === 401 ? " (Schlüssel ungültig)" : r.status === 403 ? " (fehlende Berechtigung)" : "")); return "ok"; });
+  await step("Telegram-Bot", "Telegram: TELEGRAM_BOT_TOKEN gültig? Haben alle Empfänger den Bot gestartet?", async () => { if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN fehlt"); const j = await tgApi(env, "getMe", {}); if (!j || !j.ok) throw new Error("Bot-Token wird nicht akzeptiert"); const st = (await kv.get("tgstatus")) || "-"; if (/fehler|ausnahme|kein/.test(st)) throw new Error("Letzte Bestell-Nachricht: " + st); return "@" + ((j.result && j.result.username) || "bot") + (st !== "-" ? ", zuletzt " + st : ""); });
+  await step("E-Mail-Versand (Resend)", "Resend: RESEND_API_KEY gültig? Domain pizzeria-koenigspalast.de noch verifiziert (DNS-Einträge)?", async () => { if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY fehlt"); const st = (await kv.get("mailstatus")) || ""; if (/^fehler/.test(st)) throw new Error("Letzter Mailversand fehlgeschlagen: " + st); return st ? "zuletzt " + st.split(" ")[0] : "noch kein Versand"; });
+  await step("Rechnungen", "Resend und Rechnungs-PDF prüfen.", async () => { const st = (await kv.get("invstatus")) || "-"; if (/fehler|ausnahme/.test(st)) throw new Error("Letzte Rechnung: " + st); return st; });
+  await step("Roboter-Prüfung (Turnstile)", "Cloudflare Turnstile: Secret TURNSTILE_SECRET richtig eingetragen (der lange Secret Key)?", async () => { if (!env.TURNSTILE_SECRET) return "ausgeschaltet"; const st = (await kv.get("tsstatus")) || "-"; if (/^(fehler|ausnahme)/.test(st) && age(st) < 2 * 86400000) throw new Error("Letzte Prüfung: " + st); return st === "-" ? "noch nicht benutzt" : st.split(" ")[0]; });
+  await step("Veranstaltungen (YAYLA Arena)", "Veranstaltungskalender der Arena erreichbar? Hat sich die Seite der Arena geändert?", async () => { const e = await getJSON(kv, "events"); if (!e || !e.updated) throw new Error("Keine Termine gespeichert"); if (now - Date.parse(e.updated) > 2 * 86400000) throw new Error("Termine seit über 2 Tagen nicht aktualisiert"); return (e.events || []).length + " Termine"; });
+  await step("Monatsabrechnung", "Resend prüfen; die Abrechnung kommt am 1. des Monats.", async () => { const st = (await kv.get("repstatus")) || "-"; if (/fehler|ausnahme/.test(st)) throw new Error("Letzte Abrechnung: " + st); return st; });
+  const badList = res.filter((x) => !x.ok);
+  await setJSON(kv, "selfcheck", { t: now, res }, { expirationTtl: 30 * 86400 });
+  const when = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(now));
+  const text = (badList.length ? "⚠️ Website-Prüfung " + when + ": " + badList.length + " Problem" + (badList.length === 1 ? "" : "e") + " gefunden\n\n" + badList.map((x) => "❌ " + x.n + "\n   " + x.d + "\n   Was tun: " + x.fix).join("\n\n") + "\n\nIn Ordnung:\n" : "✅ Website-Prüfung " + when + ": alle " + res.length + " Funktionen in Ordnung\n\n") + res.filter((x) => x.ok).map((x) => "✅ " + x.n + (x.d ? " (" + x.d + ")" : "")).join("\n");
+  if (!manual && badList.length) {
+    let mailed = false;
+    if (env.RESEND_API_KEY) mailed = await sendMail(env, INV_COPY_TO, "⚠️ Website pizzeria-koenigspalast.de: " + badList.length + " Problem" + (badList.length === 1 ? "" : "e") + " (" + badList.map((x) => x.n).join(", ").slice(0, 120) + ")", text + "\n\nDiese Prüfung läuft jeden Morgen um 7 Uhr automatisch. In Telegram kannst du jederzeit „check“ schreiben, um sofort zu prüfen.");
+    for (const cid of await tgRecipients(env)) await tgApi(env, "sendMessage", { chat_id: cid, text: (text + (mailed ? "" : "\n\n(Die Warn-Mail konnte nicht verschickt werden.)")).slice(0, 4000) });
+  }
+  return text;
+}
 async function sendMail(env, to, subject, text, filename, pdf) {
   const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [to], reply_to: INV_COPY_TO, subject, text, attachments: pdf ? [{ filename, content: b64(pdf) }] : undefined }) });
   if (!r.ok) console.log("Rechnungs-Mail fehlgeschlagen", r.status, (await r.text()).slice(0, 200));
+  try { await env.DATA.put("mailstatus", (r.ok ? "ok " : "fehler-" + r.status + " ") + new Date().toISOString()); } catch (e) {}
   return r.ok;
 }
 // Bestellbestätigung per E-Mail an den Kunden (jede Bestellung): Bestellnummer, Artikel, Betrag, bei Lieferung voraussichtliche Ankunft.
@@ -1503,6 +1535,6 @@ export default {
   // Cron: "0 */6 * * *" = 00:00, 06:00, 12:00, 18:00 UTC
   async scheduled(event, env, ctx) {
     if (event.cron === "*/2 * * * *") ctx.waitUntil(Promise.all([runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))), refreshRating(env), dailyReport(env), reviewMails(env)]));
-    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env), cleanupAccounts(env), computePopular(env)]));
+    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env), cleanupAccounts(env), computePopular(env), new Date().getUTCHours() === 6 ? selfCheck(env, false).catch((e) => console.log("Selbsttest-Fehler", String(e))) : null]));
   },
 };
