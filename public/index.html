@@ -114,6 +114,10 @@ dialog textarea{min-height:60px}
 #cart section{padding:0}
 #cart-pay,#cart-cash{display:none!important}
 .cl .nt{grid-column:1/3;justify-self:start}
+.add.so{opacity:.45;cursor:not-allowed}.add .so-t{font-style:normal;font-size:.75rem;color:var(--red)}
+.pop{background:#1b1b1e;border:1px solid var(--gold);border-radius:18px;padding:14px 16px;margin-bottom:34px}.pop h3{color:var(--gold);font-size:1.3rem;margin-bottom:4px}
+#ostat{position:fixed;left:12px;right:12px;top:12px;z-index:60;max-width:520px;margin:0 auto;background:#1e1e22;border:1px solid var(--gold);border-radius:14px;padding:10px 42px 10px 14px;font-size:.92rem;box-shadow:0 8px 24px rgba(0,0,0,.5)}#ostat button{position:absolute;right:8px;top:6px;background:none;border:0;color:var(--mute);font-size:1.1rem;cursor:pointer}
+#ops-fb{color:var(--gold);font-size:.85rem}
 .ts-box{margin:2px 0 12px}
 .acc-h{font-size:1.05rem;color:var(--gold);margin:18px 0 8px}
 .acc-row{display:flex;gap:8px}.acc-row input{min-width:0}
@@ -324,11 +328,13 @@ dialog.full[open]{display:block}
     </div>
     <div id="c-addr-wrap" hidden><label class="l" id="c-addr-l" for="c-street">Lieferadresse *</label><div style="display:flex;gap:8px"><input type="text" id="c-street" placeholder="Straße" autocomplete="address-line1" style="flex:1;min-width:0"><input type="text" id="c-hnr" placeholder="Nr." autocomplete="off" maxlength="12" style="width:90px;flex:none"></div><div style="display:flex;gap:8px"><input type="text" id="c-plz" placeholder="PLZ" inputmode="numeric" maxlength="5" autocomplete="postal-code" style="width:110px;flex:none"><input type="text" id="c-city" placeholder="Ort" value="Krefeld" autocomplete="address-level2" style="flex:1;min-width:0"></div><div class="msg" id="addr-hint" style="margin:0 0 10px"></div><input type="hidden" id="c-addr"></div>
     <div class="legal" id="f-deliv" hidden>🛵 <b>Lieferung:</b> Liefergebühr und Mindestbestellwert richten sich nach der Fahrstrecke (bis 1 km: ab 20 €, ohne Gebühr · bis 3 km: ab 25 €, 1 € · bis 5 km: ab 30 €, 2 € · darüber: ab 35 €, 3 €).</div>
-    <label class="l" for="c-time">Wunschzeit</label>
-    <select id="c-time"><option value="">So schnell wie möglich</option></select>
+    <label class="l" for="c-date">Wann möchtest du dein Essen?</label>
+    <div style="display:flex;gap:8px"><select id="c-date" style="flex:1;min-width:0"><option value="">Heute</option></select><select id="c-time" style="flex:1;min-width:0"><option value="">So schnell wie möglich</option></select></div>
+    <p class="fine" id="c-pre" hidden style="margin:-6px 0 10px">📅 Vorbestellung: Wir bereiten alles zu deinem Termin vor.</p>
     <button class="btn ghost" id="cart-inv" type="button" style="display:flex;width:100%;justify-content:center;margin:2px 0 10px" hidden>🧾 Rechnung anfordern</button>
     <button class="lnk" id="ck-note-t" type="button">＋ Anmerkung zur Bestellung (z. B. Allergien, Wechselgeld)</button>
     <div id="ck-note" hidden><label class="l" for="c-note">Anmerkung zur Bestellung</label><textarea id="c-note" placeholder="z. B. Allergien, Wechselgeld …"></textarea></div>
+    <label class="acc-chk" style="margin-top:12px"><input type="checkbox" id="c-review"><span>⭐ Schickt mir morgen einmalig einen Link, um euch bei Google zu bewerten (freiwillig).</span></label>
   </section>
   <section id="ck-3" hidden>
     <div class="ck-ov" id="ck-ov"></div>
@@ -707,7 +713,7 @@ $("cart-send").onclick=async()=>{
   if(type==="Lieferung"&&!addr){msg.textContent="Bitte gib die vollständige Lieferadresse an (Straße, Hausnummer, PLZ und Ort).";$("c-street").focus();return}
   const lines=CART.map(x=>`${x.qty}x ${lineName(x.key)} – ${eur(unit(x)*x.qty)}${summary(x).map(t=>`\n   ${t}`).join("")}${x.note?`\n   Anmerkung: ${x.note}`:""}`);
   const t=$("c-time").value,n=$("c-note").value.trim();
-  const order={name,email:mail,phone:$("c-phone").value.trim(),type,addr:type==="Lieferung"?addr:"",addrParts:type==="Lieferung"&&window.addrParts?addrParts():null,time:t,note:n,lines,cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),total:total(),fee:type==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0,km:type==="Lieferung"&&window.ROUTE?window.ROUTE.km:0,token:window.ACCT_TOKEN||""};
+  const order={name,email:mail,phone:$("c-phone").value.trim(),type,addr:type==="Lieferung"?addr:"",addrParts:type==="Lieferung"&&window.addrParts?addrParts():null,time:t,date:$("c-date").value,note:n,lines,cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),total:total(),fee:type==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0,km:type==="Lieferung"&&window.ROUTE?window.ROUTE.km:0,token:window.ACCT_TOKEN||""};
   let w=null;try{w=window.open("","_blank")}catch(e){}
   let no=null;
   if(STATUS_API){
@@ -717,7 +723,7 @@ $("cart-send").onclick=async()=>{
       no=j.no||null;
     }catch(e){}
   }else{try{const l=store.get("demoOrders")||[];l.unshift({...order,id:String(Date.now()),t:Date.now()});store.set("demoOrders",l.slice(0,50))}catch(e){}}
-  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website${no?", Bestellnummer "+no:""}):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}${type==="Lieferung"&&window.ROUTE?`\nLiefergebühr: ${eur(window.ROUTE.fee)} (${String(window.ROUTE.km).replace(".",",")} km Fahrstrecke)\nGesamt: ${eur(total()+window.ROUTE.fee)}`:""}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+t+" Uhr":""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
+  const text=`Hallo, ich möchte gerne bestellen (Anfrage über die Website${no?", Bestellnummer "+no:""}):\n\n${lines.join("\n")}\n\nSumme: ${eur(total())}${type==="Lieferung"&&window.ROUTE?`\nLiefergebühr: ${eur(window.ROUTE.fee)} (${String(window.ROUTE.km).replace(".",",")} km Fahrstrecke)\nGesamt: ${eur(total()+window.ROUTE.fee)}`:""}\n${type==="Lieferung"?"Lieferung an: "+addr:"Abholung"}\nName: ${name}${t?"\nWunschzeit: "+(window.wishLabel?wishLabel():t+" Uhr"):""}${n?"\nAnmerkung: "+n:""}\n\n(Unverbindliche Anfrage. Bitte um Bestätigung.)`;
   const url=`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(text)}`;
   msg.innerHTML=`${no?`Deine Bestellnummer: <b>${no}</b> (auch per E-Mail). `:""}Du wirst zu WhatsApp weitergeleitet. Dort musst du die vorbereitete Nachricht nur noch abschicken. Falls nichts passiert: <a href="${url}" target="_blank" rel="noopener" style="color:var(--gold);text-decoration:underline">hier tippen</a>.`;
   if(w){try{w.location.href=url}catch(e){location.href=url}}else location.href=url;
@@ -913,9 +919,9 @@ const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0)+
 function updPay(){
 $("c-phone").hidden=$("c-phone-l").hidden=!PAY;box.hidden=!PAY||!CART.length;if(box.hidden)return;
 if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("c-addr-wrap").hidden=!(FULFIL==="Lieferung"||(INV&&invOn));$("c-addr-l").textContent=FULFIL==="Lieferung"?"Lieferadresse *":"Rechnungsadresse *";$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?"✅ Rechnung kommt per E-Mail (bei Zahlung vor Ort nach dem Bezahlen)":"🧾 Rechnung anfordern";
-const st=computeStatus(),ok=st.s==="open"||st.s==="event";
+const st=computeStatus(),ok=st.s==="open"||st.s==="event"||!!$("c-time").value;
 btn.disabled=$("cart-cash").disabled=!ok;
-const h=ok?"":"⏰ Wir haben gerade geschlossen. Bestellen ist nur während der Öffnungszeiten möglich. Du kannst uns aber unverbindlich per WhatsApp anfragen.";info.hidden=!h;
+const h=ok?"":"⏰ Wir haben gerade geschlossen. Du kannst aber vorbestellen: Wähle in Schritt 2 einen Tag und eine Uhrzeit.";info.hidden=!h;
 if(h!==last){info.innerHTML=h;last=h}
 }
 const _rc=renderCart;renderCart=function(){_rc();updPay()};
@@ -936,11 +942,11 @@ if(total()<R.min&&!window.TIPON){msg.textContent="Der Mindestbestellwert für de
 }
 btn.disabled=$("cart-cash").disabled=true;msg.textContent=mode==="vorort"?"Einen Moment, deine Bestellung wird gesendet …":"Einen Moment, du wirst zur sicheren Zahlung weitergeleitet …";
 try{
-const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:mail,invoice:invOn,tipFill:tipAmt()>0,billAddr:invOn&&!lief?addr:"",addrParts:(lief||invOn)&&window.addrParts?addrParts():null,fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value,note:$("c-note").value.trim(),clientTotal:grand(),token:window.ACCT_TOKEN||""})});
+const r=await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({cart:CART.map(x=>({key:x.key,sel:x.sel,note:x.note,qty:x.qty})),payMode:mode,email:mail,invoice:invOn,tipFill:tipAmt()>0,billAddr:invOn&&!lief?addr:"",addrParts:(lief||invOn)&&window.addrParts?addrParts():null,fulfil:FULFIL,name,phone,addr:lief?addr:"",time:$("c-time").value,date:$("c-date").value,review:$("c-review").checked,note:$("c-note").value.trim(),clientTotal:grand(),token:window.ACCT_TOKEN||""})});
 const j=await r.json().catch(()=>({}));
 if(r.ok&&j.url){location.href=j.url;return}
-if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").innerHTML=(j.no?`Deine Bestellnummer: <b style="font-size:1.5em">${j.no}</b><br>`:"")+"Die Bestätigung kommt per E-Mail an "+esc(mail)+". Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte."+(invOn?" Die Rechnung schicken wir dir, sobald du bezahlt hast.":"");if(window.acctRefresh)acctRefresh();$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
-msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",email:"Bitte gib eine gültige E-Mail-Adresse an.",billaddr:"Die Rechnungsadresse wurde nicht gefunden. Bitte prüfe Straße, Hausnummer, PLZ und Ort.",time:"Die Wunschzeit liegt außerhalb unserer Öffnungszeiten. Bitte wähle eine andere Zeit.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
+if(r.ok&&j.ok){CART=[];persist();$("cart").close();$("paid-t").textContent="Danke, deine Bestellung ist eingegangen! 🎉";$("paid-p").innerHTML=(j.no?`Deine Bestellnummer: <b style="font-size:1.5em">${j.no}</b><br>`:"")+"Die Bestätigung kommt per E-Mail an "+esc(mail)+". Bitte bezahle bei Abholung bzw. Lieferung bar oder mit Karte."+(invOn?" Die Rechnung schicken wir dir, sobald du bezahlt hast.":"");if(window.acctRefresh)acctRefresh();if(window.trackOrder)trackOrder(j.id,j.no);$("paid-ok").onclick=()=>$("paid").close();$("paid").showModal();msg.textContent="";btn.disabled=$("cart-cash").disabled=false;return}
+msg.textContent=({closed:"Wir haben gerade geschlossen. Bestellen und Bezahlen ist nur während der Öffnungszeiten möglich.",mismatch:"Die Preise haben sich geändert. Bitte lade die Seite neu und prüfe deine Bestellung.",min:"Der Mindestbestellwert für deine Lieferadresse beträgt "+j.min+" €.",addr:"Die Lieferadresse wurde nicht gefunden. Bitte prüfe sie.",phone:"Bitte gib eine gültige Handynummer an.",email:"Bitte gib eine gültige E-Mail-Adresse an.",billaddr:"Die Rechnungsadresse wurde nicht gefunden. Bitte prüfe Straße, Hausnummer, PLZ und Ort.",time:"Die Wunschzeit liegt außerhalb unserer Öffnungszeiten. Bitte wähle eine andere Zeit.",nodelivery:"🛵 Lieferung ist gerade pausiert. Bitte wähle Abholung oder bestelle für einen anderen Tag vor.",soldout:"Ein Artikel in deinem Warenkorb ist gerade ausverkauft"+(j.item?" („"+j.item+"“)":"")+". Bitte entferne ihn.",limit:"Zu viele Versuche. Bitte warte kurz.",cart:"Der Warenkorb enthält ungültige Angaben. Bitte lade die Seite neu."})[j.error]||"Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an.";
 }catch(e){msg.textContent="Die Zahlung konnte gerade nicht gestartet werden. Bitte versuche es nochmal oder ruf uns an."}
 btn.disabled=false;updPay();
 };
@@ -949,7 +955,7 @@ const qs=new URLSearchParams(location.search),q=qs.get("bezahlt"),oid=qs.get("o"
 if(q!==null){
 history.replaceState(null,"",location.pathname);
 const d=$("paid");
-if(q==="1"){CART=[];persist();$("paid-t").textContent="Danke, deine Zahlung ist angekommen! 🎉";$("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer wird geladen …";let k=0;const poll=async()=>{try{const j=await (await fetch("/api/ordno?id="+encodeURIComponent(oid),{cache:"no-store"})).json();if(j&&j.no){$("paid-p").innerHTML=`Deine Bestellnummer: <b style="font-size:1.5em">${j.no}</b><br>Die Bestellbestätigung kommt per E-Mail. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;return}}catch(e){}if(++k<20)setTimeout(poll,2000);else $("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer bekommst du per E-Mail."};if(oid)poll();else $("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer bekommst du per E-Mail."}
+if(q==="1"){CART=[];persist();$("paid-t").textContent="Danke, deine Zahlung ist angekommen! 🎉";$("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer wird geladen …";let k=0;const poll=async()=>{try{const j=await (await fetch("/api/ordno?id="+encodeURIComponent(oid),{cache:"no-store"})).json();if(j&&j.no){if(window.trackOrder)trackOrder(oid,j.no);$("paid-p").innerHTML=`Deine Bestellnummer: <b style="font-size:1.5em">${j.no}</b><br>Die Bestellbestätigung kommt per E-Mail. Bei Fragen erreichst du uns telefonisch oder per WhatsApp.`;return}}catch(e){}if(++k<20)setTimeout(poll,2000);else $("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer bekommst du per E-Mail."};if(oid)poll();else $("paid-p").textContent="Wir bereiten deine Bestellung vor. Deine Bestellnummer bekommst du per E-Mail."}
 else{$("paid-t").textContent="Zahlung abgebrochen";$("paid-p").textContent="Es wurde nichts abgebucht. Dein Warenkorb ist noch da."}
 $("paid-ok").onclick=()=>d.close();d.showModal();
 }
@@ -968,17 +974,23 @@ if(hid.value!==v){hid.value=v;hid.dispatchEvent(new Event("input"))}};
 window.addrComp=()=>{split();comp()};
 [st,hn,pz,ct].forEach(x=>x.addEventListener("input",comp));st.addEventListener("change",()=>{split();comp()});st.addEventListener("blur",()=>{split();comp()});})();
 </script><script>
-/* Wunschzeit: nur Zeiten innerhalb der Öffnungszeiten (heute), frühestens in 30 Minuten */
-(()=>{const sel=$("c-time"),hm=m=>pad(Math.floor(m/60))+":"+pad(m%60);
-function wins(){const now=new Date(),today=ymd(now),w=[];
-if(OVERRIDE&&OVERRIDE.state&&OVERRIDE.expires>Date.now()){if(OVERRIDE.state==="closed")return[];w.push([0,1440])}
-const reg=HOURS[now.getDay()];if(reg)w.push([mins(reg[0]),mins(reg[1])]);
-EVENTS.filter(e=>e.date===today&&/^\d{1,2}:\d{2}$/.test(e.open||"")).forEach(e=>w.push([mins(e.open),1440]));return w}
-function fill(){const now=new Date(),start=now.getHours()*60+now.getMinutes()+30,set=new Set(),cur=sel.value;
-wins().forEach(([a,b])=>{for(let m=Math.ceil(Math.max(a,start)/15)*15;m<b;m+=15)set.add(m)});
-const list=[...set].sort((a,b)=>a-b).map(hm);
-const html='<option value="">So schnell wie möglich</option>'+list.map(t=>'<option value="'+t+'">'+t+' Uhr</option>').join("");
-if(sel.dataset.h!==html){sel.innerHTML=html;sel.dataset.h=html;sel.value=list.includes(cur)?cur:""}}
+/* Wunschtermin: heute oder Vorbestellung bis 7 Tage, nur innerhalb der Öffnungszeiten; heute frühestens in 30 Minuten */
+(()=>{const ds=$("c-date"),sel=$("c-time"),hm=m=>pad(Math.floor(m/60))+":"+pad(m%60);
+function winsFor(d,isToday){const w=[];if(isToday&&OVERRIDE&&OVERRIDE.state&&OVERRIDE.expires>Date.now()){if(OVERRIDE.state==="closed")return[];w.push([0,1440])}
+const reg=HOURS[d.getDay()];if(reg)w.push([mins(reg[0]),mins(reg[1])]);
+EVENTS.filter(e=>e.date===ymd(d)&&/^\d{1,2}:\d{2}$/.test(e.open||"")).forEach(e=>w.push([mins(e.open),1440]));return w}
+function slots(d,isToday){const now=new Date(),start=isToday?now.getHours()*60+now.getMinutes()+30:0,set=new Set();
+winsFor(d,isToday).forEach(([a,b])=>{for(let m=Math.ceil(Math.max(a,start)/15)*15;m<b;m+=15)set.add(m)});return [...set].sort((a,b)=>a-b).map(hm)}
+function days(){const out=[],n=new Date();for(let i=0;i<=7;i++){const d=new Date(n.getFullYear(),n.getMonth(),n.getDate()+i);const s=slots(d,i===0);if(i===0||s.length)out.push({v:i===0?"":ymd(d),l:i===0?"Heute":i===1?"Morgen, "+d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"}):d.toLocaleDateString("de-DE",{weekday:"short",day:"2-digit",month:"2-digit"}),s})}return out}
+let DAYS=[];
+function fill(){DAYS=days();const cd=ds.value;const dh=DAYS.map(x=>'<option value="'+x.v+'">'+x.l+'</option>').join("");
+if(ds.dataset.h!==dh){ds.innerHTML=dh;ds.dataset.h=dh;ds.value=DAYS.some(x=>x.v===cd)?cd:""}
+const day=DAYS.find(x=>x.v===ds.value)||DAYS[0],cur=sel.value,future=!!ds.value;
+const html=(future?'<option value="">Bitte Uhrzeit wählen</option>':'<option value="">So schnell wie möglich</option>')+day.s.map(t=>'<option value="'+t+'">'+t+' Uhr</option>').join("");
+if(sel.dataset.h!==html){sel.innerHTML=html;sel.dataset.h=html;sel.value=day.s.includes(cur)?cur:""}
+$("c-pre").hidden=!future}
+window.wishLabel=()=>{const t=sel.value;if(!t)return "";const d=DAYS.find(x=>x.v===ds.value);return (ds.value&&d?d.l+", ":"")+t+" Uhr"};
+ds.onchange=fill;
 const _rc=renderCart;renderCart=function(){_rc();fill()};setInterval(()=>{if($("cart").open)fill()},30000);fill();})();
 </script><script>
 /* Kundenkonto: Registrierung und Anmeldung mit Passwort, Mein Konto mit Bestellverlauf; Kundenliste für den Inhaber */
@@ -1070,7 +1082,7 @@ const grandT=()=>total()+(lief()&&window.ROUTE?window.ROUTE.fee:0)+tip();
 const pm=()=>{const r=document.querySelector("[name=paym]:checked");return r?r.value:"online"};
 const payOn=()=>!$("pay-box").hidden;
 function show(n,keep){cur=n;S.forEach((s,i)=>{if(s)s.hidden=i!==n});document.querySelectorAll(".ck-steps span").forEach(x=>x.classList.toggle("on",+x.dataset.s<=n));$("ck-title").textContent=["","🛒 Warenkorb","📝 Deine Angaben","💳 Bezahlen"][n];back.hidden=n===1;if(!keep)msg.textContent="";if(n===3)ov();upd();D.scrollTop=0}
-function ov(){const t=$("c-time").value,a=$("c-addr").value.trim(),R=window.ROUTE;let x='<div class="r"><span>'+(lief()?"🛵 Lieferung an "+esc(a):"🏃 Abholung · Westparkstraße 102")+'</span><button class="lnk" type="button" data-go2>Ändern</button></div><div class="r"><span>⏰ '+(t?t+" Uhr":"So schnell wie möglich")+'</span></div><div class="r"><span>👤 '+esc($("c-name").value.trim())+'</span></div>';
+function ov(){const t=$("c-time").value,a=$("c-addr").value.trim(),R=window.ROUTE;let x='<div class="r"><span>'+(lief()?"🛵 Lieferung an "+esc(a):"🏃 Abholung · Westparkstraße 102")+'</span><button class="lnk" type="button" data-go2>Ändern</button></div><div class="r"><span>⏰ '+(t?(window.wishLabel?wishLabel():t+" Uhr"):"So schnell wie möglich")+'</span></div><div class="r"><span>👤 '+esc($("c-name").value.trim())+'</span></div>';
 x+='<div class="r" style="margin-top:6px"><span>Summe ('+count()+' Artikel)</span><span>'+eur(total())+'</span></div>';
 if(lief()&&R)x+='<div class="r"><span>Liefergebühr</span><span>'+eur(R.fee)+'</span></div>';
 if(tip()>0)x+='<div class="r"><span>Trinkgeld (Auffüllung)</span><span>'+eur(tip())+'</span></div>';
@@ -1093,7 +1105,7 @@ else if(inv&&!a)return bad("c-street","Für die Rechnung brauchen wir deine voll
 return true}
 next.onclick=()=>{msg.textContent="";
 if(cur===1){if(CART.length)show(2);return}
-if(cur===2){if(v2())show(3);return}
+if(cur===2){if($("c-date").value&&!$("c-time").value){bad("c-time","Bitte wähle eine Uhrzeit für deine Vorbestellung.");return}if(lief()&&(window.OPS||{}).delOff&&!$("c-date").value){bad(null,"🛵 Lieferung ist gerade pausiert. Bitte wähle Abholung oder bestelle für einen anderen Tag vor.");return}if(v2())show(3);return}
 if(!v2()){show(2,true);return}
 $(payOn()?(pm()==="online"?"cart-pay":"cart-cash"):"cart-send").click();
 setTimeout(()=>{const ae=document.activeElement;if(ae&&S[2].contains(ae))show(2,true)},80)};
@@ -1108,6 +1120,32 @@ const _sm=D.showModal.bind(D);D.showModal=function(){show(1);_sm();upd()};
 const _rc=renderCart;renderCart=function(){_rc();upd()};
 setInterval(()=>{if(D.open){upd();if(cur===3)ov()}},700);
 show(1);
+})();
+</script><script>
+/* Ausverkauft, Wartezeit und Lieferpause (per Telegram gesteuert), beliebte Gerichte, Bestellstatus */
+(()=>{window.OPS={};let POP=[];
+const isOut=n=>{const s=String(n||"").toLowerCase();return (window.OPS.out||[]).some(t=>s.includes(t))};
+function itemName(k){try{const [c,i]=k.split("|");return MENU[c].items[+i][0]}catch(e){return ""}}
+function mark(){document.querySelectorAll("#menu .add[data-key]").forEach(b=>{const o=isOut(itemName(b.dataset.key));b.disabled=o;b.classList.toggle("so",o);const em=b.querySelector(".so-t");if(o&&!em)b.insertAdjacentHTML("beforeend",'<em class="so-t"> ausverkauft</em>');if(!o&&em)em.remove()})}
+function popHtml(){const ks=POP.filter(k=>{try{return !!itemOf(k)}catch(e){return false}});if(!ks.length)return "";
+return '<div class="pop" id="pop"><h3>⭐ Beliebt bei unseren Gästen</h3><div class="items">'+ks.map(k=>'<div class="it"><div><b>'+esc(lineName(k))+'</b></div><div class="buy"><button class="add" data-key="'+k+'">'+eur(basePrice(k))+'<span>＋</span></button></div></div>').join("")+'</div></div>'}
+function addPop(){const m=$("menu");if(!m)return;const o=$("pop");if(o)o.remove();const x=popHtml();if(x)m.insertAdjacentHTML("afterbegin",x)}
+const _rm=renderMenu;renderMenu=function(){_rm();addPop();mark()};
+const _oo=openOpt;openOpt=function(k){_oo(k);document.querySelectorAll('#opt-body [name=top]').forEach(i=>{if(isOut(i.value)){i.disabled=true;i.checked=false;const l=i.closest("label");if(l&&!l.querySelector(".so-t"))l.insertAdjacentHTML("beforeend",'<em class="so-t"> ausverkauft</em>')}})};
+function opsText(){const o=window.OPS,t=[];if(o.wait)t.push("⏱ Aktuelle Wartezeit ca. "+o.wait+" Min.");if(o.delOff)t.push("🛵 Lieferung gerade pausiert, Abholung geht.");return t.join(" ")}
+function note(){const fb=$("fbar");if(fb){let s=$("ops-fb");if(!s){s=document.createElement("span");s.id="ops-fb";fb.appendChild(s)}s.textContent=opsText()}}
+const _rc=renderCart;renderCart=function(){_rc();const cs=$("cart-status"),x=opsText();if(x&&cs&&!cs.textContent.includes(x))cs.textContent=(cs.textContent?cs.textContent+" ":"")+x};
+async function loadOps(){try{const r=await fetch("/api/ops",{cache:"no-store"});if(r.ok)window.OPS=await r.json()}catch(e){}mark();note()}
+fetch("/api/popular",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{POP=(j&&j.keys)||[];addPop();mark()}).catch(()=>{});
+loadOps();setInterval(loadOps,60000);
+/* Bestellstatus nach dem Bestellen (5 Stunden lang oben eingeblendet) */
+const K="lastOrd",bar=document.createElement("div");bar.id="ostat";bar.hidden=true;document.body.appendChild(bar);
+const L={"":"Eingegangen ✔",a:"Angenommen, wird zubereitet 👨‍🍳",f:"Fertig zur Abholung 🍕",u:"Unterwegs zu dir 🛵"};
+async function tick(){const o=store.get(K);if(!o||!o.id||Date.now()-o.at>5*3600e3){bar.hidden=true;return}
+try{const j=await (await fetch("/api/ordno?id="+encodeURIComponent(o.id),{cache:"no-store"})).json();if(!j||!j.no){bar.hidden=true;return}
+bar.innerHTML='<b>Deine Bestellung '+esc(String(j.no))+':</b> '+(L[j.st||""]||L[""])+'<button type="button" aria-label="Ausblenden">✕</button>';bar.hidden=false;bar.querySelector("button").onclick=()=>{store.del(K);bar.hidden=true}}catch(e){}}
+window.trackOrder=(id,no)=>{if(!id)return;store.set(K,{id,no,at:Date.now()});tick()};
+tick();setInterval(tick,30000);
 })();
 </script></body>
 </html>
