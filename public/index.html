@@ -915,7 +915,7 @@ upd();
 let PAY=false,INV=false,invOn=false,last="";
 const box=$("pay-box"),btn=$("cart-pay"),info=$("pay-info"),msg=$("cart-msg");
 fetch("/api/config",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(c=>{PAY=!!(c&&c.pay);INV=!!(c&&c.inv);updPay()}).catch(()=>{});
-const grand=()=>total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0)+tipAmt();
+const grand=()=>Math.round((total()+(FULFIL==="Lieferung"&&window.ROUTE?window.ROUTE.fee:0)+tipAmt()-(window.loyalDisc?loyalDisc():0))*100)/100;
 function updPay(){
 $("c-phone").hidden=$("c-phone-l").hidden=!PAY;box.hidden=!PAY||!CART.length;if(box.hidden)return;
 if(!INV)invOn=false;$("cart-inv").hidden=!INV;$("c-addr-wrap").hidden=!(FULFIL==="Lieferung"||(INV&&invOn));$("c-addr-l").textContent=FULFIL==="Lieferung"?"Lieferadresse *":"Rechnungsadresse *";$("cart-inv").classList.toggle("on",invOn);$("cart-inv").textContent=invOn?"✅ Rechnung kommt per E-Mail (bei Zahlung vor Ort nach dem Bezahlen)":"🧾 Rechnung anfordern";
@@ -1001,6 +1001,10 @@ const okm=s=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
 const ERR={email:"Bitte gib eine gültige E-Mail-Adresse an.",name:"Bitte gib deinen Namen an.",pw:"Das Passwort muss mindestens 8 Zeichen lang sein.",exists:"Zu dieser E-Mail-Adresse gibt es schon ein Konto. Bitte melde dich an oder nutze „Passwort vergessen?“.",login:"E-Mail-Adresse oder Passwort stimmt nicht.",limit:"Zu viele Versuche. Bitte warte ein paar Minuten.",wait:"Bitte warte eine Minute, bevor du einen neuen Code anforderst.",code:"Der Code stimmt nicht.",expired:"Der Code ist abgelaufen oder wurde zu oft falsch eingegeben. Bitte fordere einen neuen an.",oldpw:"Das Passwort stimmt nicht.",auth:"Bitte melde dich neu an.",nodb:"Kundenkonten sind gerade nicht verfügbar.",bot:"Die Roboter-Prüfung wurde vom Server nicht bestätigt. Bitte versuche es nochmal.",human:"Bitte warte kurz, bis die Prüfung „Kein Roboter“ fertig ist, oder tippe das Kästchen an."};
 const err=j=>ERR[j.error]||"Das hat gerade nicht geklappt. Bitte versuche es nochmal.";
 const say=t=>{am.textContent=t};
+/* Treue-Aktion: jede 10. Bestellung mit Kundenkonto 10 % günstiger */
+window.LOYAL=null;
+window.loyalDisc=()=>{const L=window.LOYAL;if(!PROF||typeof L!=="number"||(L+1)%10!==0)return 0;return CART.reduce((s,x)=>{const u=Math.round(unit(x)*100);return s+(u-Math.round(u*0.9))*x.qty},0)/100};
+const loyTxt=()=>{const L=window.LOYAL;if(!PROF||typeof L!=="number")return "";const r=10-(L%10);return '<br><span style="color:var(--gold)">🎁 '+(r===1?"Deine nächste Bestellung ist 10 % günstiger!":"Treue-Bonus: noch "+(r-1)+" Bestellung"+(r-1===1?"":"en")+", dann ist eine Bestellung 10 % günstiger.")+'</span>'};
 /* Roboter-Prüfung (Cloudflare Turnstile): wird nur im Anmeldefenster geladen */
 function tsLoad(){if(window.turnstile)return Promise.resolve();if(!window.__tsP)window.__tsP=new Promise(r=>{const s=document.createElement("script");s.src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";s.async=true;s.onload=()=>r();s.onerror=()=>r();document.head.appendChild(s)});return window.__tsP}
 const TOKS={},TSP={};
@@ -1015,18 +1019,18 @@ if(p.city&&(!$("c-city").value.trim()||$("c-city").value.trim()==="Krefeld"))$("
 if(window.addrComp)addrComp()}
 function drawNav(){document.querySelectorAll(".acct-open").forEach(b=>{b.hidden=!ON;b.textContent=PROF?"👤 Mein Konto":(b.classList.contains("navown")?"👤 Anmelden":"👤 Anmelden / Konto")})}
 function drawBox(){box.hidden=!ON;if(!ON)return;
-if(!PROF){box.innerHTML='<div class="fine" style="margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px">👤 Mit Kundenkonto schneller bestellen:<span style="display:flex;gap:14px"><button type="button" class="lnk acct-go" data-v="login">Anmelden</button><button type="button" class="lnk acct-go" data-v="register">Konto erstellen</button></span></div>';return}
+if(!PROF){box.innerHTML='<div class="fine" style="margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px">👤 Mit Kundenkonto schneller bestellen, jede 10. Bestellung 10 % günstiger:<span style="display:flex;gap:14px"><button type="button" class="lnk acct-go" data-v="login">Anmelden</button><button type="button" class="lnk acct-go" data-v="register">Konto erstellen</button></span></div>';return}
 const li=ORD.findIndex(o=>valid(o.cart).length);
-box.innerHTML='<div class="legal" style="margin:0">👤 Angemeldet als <b>'+esc(PROF.name||PROF.email)+'</b><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">'+(li>=0?'<button type="button" class="btn ghost" data-re="'+li+'" style="padding:8px 14px">🔁 Letzte Bestellung wiederholen</button>':'')+'<button type="button" class="btn ghost acct-go" data-v="account" style="padding:8px 14px">Mein Konto</button></div></div>'}
+box.innerHTML='<div class="legal" style="margin:0">👤 Angemeldet als <b>'+esc(PROF.name||PROF.email)+'</b>'+loyTxt()+'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">'+(li>=0?'<button type="button" class="btn ghost" data-re="'+li+'" style="padding:8px 14px">🔁 Letzte Bestellung wiederholen</button>':'')+'<button type="button" class="btn ghost acct-go" data-v="account" style="padding:8px 14px">Mein Konto</button></div></div>'}
 const PAYL={online:"online bezahlt",vorort:"Zahlung vor Ort",wa:"WhatsApp-Anfrage"};
 function drawAccount(){if(!PROF)return;
-$("a-hello").innerHTML="Angemeldet als <b>"+esc(PROF.name||"")+"</b> ("+esc(PROF.email)+")";
+$("a-hello").innerHTML="Angemeldet als <b>"+esc(PROF.name||"")+"</b> ("+esc(PROF.email)+")"+loyTxt();
 [["ad-name","name"],["ad-phone","phone"],["ad-street","street"],["ad-hnr","hnr"],["ad-plz","plz"],["ad-city","city"]].forEach(([i,f])=>{$(i).value=PROF[f]||""});
 $("aa-orders").innerHTML=ORD.length?ORD.map((o,i)=>'<div class="ord"><div class="oh"><b>'+new Date(o.t).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})+'</b><span>Nr. '+esc(String(o.no||"–"))+' · '+esc(o.type||"")+' · '+(PAYL[o.pay]||"")+'</span></div><pre>'+esc((o.lines||[]).join("\n"))+'</pre><div class="oh"><b>'+eur(o.total||0)+'</b>'+(valid(o.cart).length?'<button class="add" type="button" data-re="'+i+'">🔁 Nochmal bestellen</button>':'')+'</div></div>').join(""):"<p>Noch keine Bestellungen mit diesem Konto.</p>";
 $("ax-wrap").hidden=true;$("ax-del").textContent="Konto löschen";$("ax-pw").value=""}
 function drawAll(){drawNav();drawBox();if(d.open&&PROF&&!$("a-account").hidden)drawAccount()}
-function setSess(j){if(j.token){TOK=j.token;store.set("acctTok",TOK);window.ACCT_TOKEN=TOK}PROF=j.profile;ORD=j.orders||[];fillForm(PROF);drawAll()}
-function logoutLocal(clear){TOK="";PROF=null;ORD=[];store.del("acctTok");window.ACCT_TOKEN="";if(clear){["c-name","c-mail","c-phone","c-street","c-hnr","c-plz"].forEach(i=>$(i).value="");if(window.addrComp)addrComp()}drawAll()}
+function setSess(j){if(j.token){TOK=j.token;store.set("acctTok",TOK);window.ACCT_TOKEN=TOK}PROF=j.profile;ORD=j.orders||[];if(typeof j.loyal==="number")window.LOYAL=j.loyal;fillForm(PROF);drawAll()}
+function logoutLocal(clear){TOK="";PROF=null;ORD=[];window.LOYAL=null;store.del("acctTok");window.ACCT_TOKEN="";if(clear){["c-name","c-mail","c-phone","c-street","c-hnr","c-plz"].forEach(i=>$(i).value="");if(window.addrComp)addrComp()}drawAll()}
 function open(v){view(v||(PROF?"account":"login"));if(!d.open){d.showModal();tsRender(v||(PROF?"account":"login"))}if(v==="login"||(!v&&!PROF)){$("al-mail").value=$("al-mail").value||$("c-mail").value.trim();$("al-mail").focus()}}
 window.acctRefresh=async()=>{if(!TOK){drawAll();return}try{const{r,j}=await P("me",{token:TOK});if(r.status===401){logoutLocal();return}if(r.ok)setSess(j)}catch(x){}drawAll()};
 document.addEventListener("click",async e=>{
@@ -1078,7 +1082,7 @@ const _os2=ownerShow;ownerShow=function(l){_os2(l);$("owner-custs").hidden=ROLE!
 (()=>{const D=$("cart"),S=[null,$("ck-1"),$("ck-2"),$("ck-3")],next=$("ck-next"),back=$("ck-back"),msg=$("cart-msg");let cur=1;
 const lief=()=>FULFIL==="Lieferung";
 const tip=()=>window.tipAmt?tipAmt():0;
-const grandT=()=>total()+(lief()&&window.ROUTE?window.ROUTE.fee:0)+tip();
+const grandT=()=>total()+(lief()&&window.ROUTE?window.ROUTE.fee:0)+tip()-(window.loyalDisc?loyalDisc():0);
 const pm=()=>{const r=document.querySelector("[name=paym]:checked");return r?r.value:"online"};
 const payOn=()=>!$("pay-box").hidden;
 function show(n,keep){cur=n;S.forEach((s,i)=>{if(s)s.hidden=i!==n});document.querySelectorAll(".ck-steps span").forEach(x=>x.classList.toggle("on",+x.dataset.s<=n));$("ck-title").textContent=["","🛒 Warenkorb","📝 Deine Angaben","💳 Bezahlen"][n];back.hidden=n===1;if(!keep)msg.textContent="";if(n===3)ov();upd();D.scrollTop=0}
@@ -1086,6 +1090,7 @@ function ov(){const t=$("c-time").value,a=$("c-addr").value.trim(),R=window.ROUT
 x+='<div class="r" style="margin-top:6px"><span>Summe ('+count()+' Artikel)</span><span>'+eur(total())+'</span></div>';
 if(lief()&&R)x+='<div class="r"><span>Liefergebühr</span><span>'+eur(R.fee)+'</span></div>';
 if(tip()>0)x+='<div class="r"><span>Trinkgeld (Auffüllung)</span><span>'+eur(tip())+'</span></div>';
+if(window.loyalDisc&&loyalDisc()>0)x+='<div class="r" style="color:var(--gold)"><span>🎁 Treue-Rabatt 10 % (10. Bestellung)</span><span>−'+eur(loyalDisc())+'</span></div>';
 x+='<div class="r t"><span>Gesamt</span><span>'+eur(grandT())+'</span></div>';const o=$("ck-ov");if(o.dataset.h!==x){o.innerHTML=x;o.dataset.h=x}}
 function upd(){if(!D.open)return;const empty=!CART.length;
 if(cur===1){next.textContent=empty?"Warenkorb ist leer":"Weiter · "+eur(total());next.disabled=empty}
