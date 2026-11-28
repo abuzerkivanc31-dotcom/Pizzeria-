@@ -119,25 +119,159 @@ async function setOrderNo(kv, rec, online) {
   await kv.put("on:" + rec.no, rec.id, { expirationTtl: ORDER_TTL_S });
   return rec.no;
 }
-// Wunschzeit: leer (= so schnell wie möglich) oder "HH:MM" heute, innerhalb der Öffnungszeiten (gleiche Regeln wie die Seite)
-async function checkWish(env, t) {
+// Wunschzeit: leer (= so schnell wie möglich, nur heute) oder "HH:MM" an einem Tag bis 7 Tage im Voraus (Vorbestellung),
+// jeweils innerhalb der Öffnungszeiten (regulär Mo–Fr 07:30–15:30, an Eventtagen ab Öffnung). Gleiche Regeln wie die Seite.
+async function checkWish(env, t, date) {
   t = String(t || "").trim();
-  if (!t) return { ok: true, time: "" };
+  date = String(date || "").trim();
+  const now = Date.now(), bn = berlinNow(), today = berlinDate(now);
+  if (!date) date = today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "time" };
+  const days = Math.round((Date.parse(date + "T12:00:00Z") - Date.parse(today + "T12:00:00Z")) / 86400000);
+  if (!(days >= 0 && days <= 7)) return { error: "time" };
+  if (!t) return days === 0 ? { ok: true, time: "", date: "" } : { error: "time" };
   const m = t.match(/^(\d{1,2}):(\d{2})$/);
   if (!m || Number(m[2]) > 59) return { error: "time" };
   const tm = Number(m[1]) * 60 + Number(m[2]);
   if (tm >= 1440) return { error: "time" };
-  const now = Date.now(), bn = berlinNow(), today = berlinDate(now);
-  if (tm < bn.m - 5) return { error: "time" };
-  const st = await getJSON(env.DATA, "status");
   const win = [];
-  if (st && st.state && st.expires > now) { if (st.state === "closed") return { error: "time" }; win.push([0, 1440]); }
-  if (bn.dow >= 1 && bn.dow <= 5) win.push([450, 930]);
+  if (days === 0) {
+    if (tm < bn.m - 5) return { error: "time" };
+    const st = await getJSON(env.DATA, "status");
+    if (st && st.state && st.expires > now) { if (st.state === "closed") return { error: "time" }; win.push([0, 1440]); }
+  }
+  const dow = new Date(date + "T12:00:00Z").getUTCDay();
+  if (dow >= 1 && dow <= 5) win.push([450, 930]);
   let evs = ((await getJSON(env.DATA, "events")) || {}).events || [];
   if (!evs.length) { try { evs = (await (await env.ASSETS.fetch(new URL("/events.json", "https://pizzeria-koenigspalast.de"))).json()).events || []; } catch (e) { evs = []; } }
-  for (const e of evs) if (e.date === today && /^\d{1,2}:\d{2}$/.test(e.open || "")) { const [h, mi] = e.open.split(":").map(Number); win.push([h * 60 + mi, 1440]); }
+  for (const e of evs) if (e.date === date && /^\d{1,2}:\d{2}$/.test(e.open || "")) { const [h, mi] = e.open.split(":").map(Number); win.push([h * 60 + mi, 1440]); }
   if (!win.some((x) => tm >= x[0] && tm < x[1])) return { error: "time" };
-  return { ok: true, time: m[1].padStart(2, "0") + ":" + m[2] };
+  return { ok: true, time: m[1].padStart(2, "0") + ":" + m[2], date: days === 0 ? "" : date };
+}
+// "Sa., 29.11., 18:30 Uhr" bzw. "18:30 Uhr"
+const wishStr = (r) => (r && r.time ? (r.date ? new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(r.date + "T12:00:00Z")) + ", " : "") + String(r.time).replace(/\s*uhr$/i, "") + " Uhr" : "");
+// ---------- Steuerung im Laden per Telegram: Wartezeit, Lieferung pausieren, Ausverkauft ----------
+async function getOps(env) { return (await getJSON(env.DATA, "ops")) || {}; }
+function soldOutHit(menu, cart, out) {
+  if (!out || !out.length || !Array.isArray(cart)) return "";
+  const hit = (s) => out.some((t) => String(s || "").toLowerCase().includes(t));
+  for (const l of cart) {
+    const [c, i] = String((l && l.key) || "").split("|");
+    const it = menu.MENU[c] && menu.MENU[c].items[Number(i)];
+    if (it && hit(it[0])) return it[0];
+    const tops = l && l.sel && Array.isArray(l.sel.tops) ? l.sel.tops : [];
+    for (const tp of tops) if (hit(tp)) return tp;
+  }
+  return "";
+}
+async function opsCommand(env, raw) {
+  const kv = env.DATA;
+  const ops = await getOps(env);
+  const save = () => setJSON(kv, "ops", ops);
+  const t = raw.replace(/\s+/g, " ").trim();
+  const status = () => "Aktueller Stand:\n⏱ Wartezeit: " + (ops.wait ? ops.wait + " Minuten" : "normal") + "\n🛵 Lieferung: " + (ops.delOff ? "PAUSIERT" : "an") + "\n⛔ Ausverkauft: " + ((ops.out || []).join(", ") || "nichts");
+  if (/^(hilfe|befehle|\/start|\/help)$/.test(t)) return "So steuerst du die Website per Nachricht:\n• „wartezeit 45“ – Zubereitungszeit auf 45 Minuten setzen (gilt für Lieferzeit-Mails)\n• „wartezeit normal“ – zurück auf normal\n• „lieferung aus“ / „lieferung an“ – Lieferung pausieren oder wieder an\n• „sucuk aus“ – alles mit Sucuk ausverkauft\n• „sucuk an“ – wieder verfügbar\n• „alles an“ – nichts mehr ausverkauft\n• „12 bezahlt“ – Vor-Ort-Bestellung 12 als bezahlt markieren\n• „status“ – aktueller Stand";
+  if (t === "status") return status();
+  let m = t.match(/^warte?zeit:? (\d{1,3})(?: ?min(?:uten)?)?$/);
+  if (m) { const n = Number(m[1]); if (n < 10 || n > 180) return "Bitte eine Wartezeit zwischen 10 und 180 Minuten angeben."; ops.wait = n; await save(); return "⏱ Wartezeit ist jetzt " + n + " Minuten. Kunden sehen das auf der Website und in der Lieferzeit-Mail."; }
+  if (/^warte?zeit:? (normal|aus|0|zurück|standard)$/.test(t)) { delete ops.wait; await save(); return "⏱ Wartezeit ist wieder normal."; }
+  if (/^lieferung (aus|stopp|stop|pause|pausieren)$/.test(t)) { ops.delOff = true; await save(); return "🛵 Lieferung ist pausiert. Kunden können nur noch abholen (oder für einen anderen Tag vorbestellen). Mit „lieferung an“ wieder einschalten."; }
+  if (/^lieferung (an|ein|wieder an)$/.test(t)) { ops.delOff = false; await save(); return "🛵 Lieferung ist wieder an."; }
+  if (/^alles (an|wieder da|da|verfügbar)$/.test(t)) { ops.out = []; await save(); return "✅ Nichts mehr ausverkauft."; }
+  m = t.match(/^(.{3,30}?) (aus|ausverkauft|alle|leer)$/);
+  if (m) {
+    const term = m[1].replace(/^(die|der|das) /, "");
+    let menu = null;
+    try { menu = await (await env.ASSETS.fetch(new URL("/menu.json", "https://pizzeria-koenigspalast.de"))).json(); } catch (e) {}
+    const names = [];
+    if (menu) { for (const c of Object.values(menu.MENU)) for (const it of c.items) if (it[0].toLowerCase().includes(term)) names.push(it[0]); for (const tp of menu.TOPS) if (tp[0].toLowerCase().includes(term)) names.push(tp[0] + " (Zutat)"); }
+    if (menu && !names.length) return "❓ Nichts auf der Karte passt zu „" + term + "“. Bitte so schreiben, wie es auf der Karte steht, z. B. „sucuk aus“.";
+    ops.out = [...new Set([...(ops.out || []), term])].slice(0, 30);
+    await save();
+    return "⛔ Ausverkauft: " + term + "\nBetrifft: " + names.slice(0, 12).join(", ") + (names.length > 12 ? " …" : "") + "\nMit „" + term + " an“ wieder verfügbar.";
+  }
+  m = t.match(/^(.{3,30}?) (an|wieder da|da|verfügbar)$/);
+  if (m) { const term = m[1].replace(/^(die|der|das) /, ""); const before = (ops.out || []).length; ops.out = (ops.out || []).filter((x) => x !== term); await save(); return ops.out.length < before ? "✅ " + term + " ist wieder verfügbar." : "ℹ️ „" + term + "“ war nicht als ausverkauft markiert.\n" + status(); }
+  return null;
+}
+// ---------- Bestellstatus (Knöpfe unter der Telegram-Nachricht) ----------
+const ST_NAME = { a: "Angenommen", f: "Fertig", u: "Unterwegs" };
+async function setOrderStatus(env, no, st, chat) {
+  const kv = env.DATA;
+  const reply = (t) => tgApi(env, "sendMessage", { chat_id: chat, text: t });
+  const id = await kv.get("on:" + no);
+  const rec = id && (await getJSON(kv, "o:" + id));
+  if (!rec || !ST_NAME[st]) return reply("❓ Bestellung Nr. " + no + " wurde nicht gefunden.");
+  if (rec.status === st) return reply("ℹ️ Nr. " + no + " steht schon auf „" + ST_NAME[st] + "“.");
+  rec.status = st;
+  rec.statusAt = Date.now();
+  await setJSON(kv, "o:" + rec.id, rec, { expirationTtl: ORDER_TTL_S });
+  let mailed = false;
+  const lief = rec.type === "Lieferung";
+  if (env.RESEND_API_KEY && rec.email && ((st === "f" && !lief) || (st === "u" && lief))) {
+    const subj = st === "f" ? "Deine Bestellung Nr. " + rec.no + " ist fertig zur Abholung 🍕" : "Deine Bestellung Nr. " + rec.no + " ist unterwegs 🛵";
+    const txt = "Hallo " + rec.name + ",\n\n" + (st === "f" ? "deine Bestellung Nr. " + rec.no + " ist fertig. Du kannst sie jetzt bei uns abholen: Westparkstraße 102, 47803 Krefeld." : "deine Bestellung Nr. " + rec.no + " ist jetzt unterwegs zu dir (" + rec.addr + "). Bis gleich!") + (rec.paid || rec.cashPaid ? "" : "\nBitte halte den Betrag bereit (bar oder Karte).") + "\n\nPizza & Baguettehaus am Königspalast · 02151 4546528";
+    mailed = await sendMail(env, rec.email, subj, txt);
+  }
+  return reply((st === "a" ? "✅" : st === "f" ? "🍕" : "🛵") + " Nr. " + no + " (" + rec.name + "): " + ST_NAME[st] + "." + (mailed ? " Kunde per E-Mail informiert." : " Kunde sieht den Stand auf der Website."));
+}
+// ---------- Beliebte Gerichte (aus dem Umsatzbuch der letzten 60 Tage) ----------
+async function computePopular(env) {
+  try {
+    const kv = env.DATA, now = Date.now(), cnt = {};
+    for (const ym of [ymOf(now), ymOf(now - 32 * 86400000), ymOf(now - 62 * 86400000)]) {
+      let cursor;
+      do {
+        const r = await kv.list({ prefix: "led:" + ym + ":", cursor, limit: 1000 });
+        for (const k of r.keys) { const e = await getJSON(kv, k.name); if (!e || now - e.t > 60 * 86400000) continue; for (const x of e.items || []) if (x.key && x.cat !== "getraenke") cnt[x.key] = (cnt[x.key] || 0) + x.qty; }
+        cursor = r.list_complete ? null : r.cursor;
+      } while (cursor);
+    }
+    const keys = Object.entries(cnt).filter((x) => x[1] >= 3).sort((a, b) => b[1] - a[1]).slice(0, 4).map((x) => x[0]);
+    await setJSON(kv, "popular", { keys, updated: now });
+  } catch (e) { console.log("Beliebt-Fehler", String(e)); }
+}
+// ---------- Tagesbericht per Telegram (jeden Abend um 23:30 Uhr) ----------
+async function dailyReport(env) {
+  try {
+    const kv = env.DATA, now = Date.now(), bn = berlinNow(), today = berlinDate(now);
+    if (!env.TELEGRAM_BOT_TOKEN || bn.m < 23 * 60 + 30 || (await kv.get("dayrep:" + today))) return;
+    await kv.put("dayrep:" + today, "1", { expirationTtl: 3 * 86400 });
+    const from = Number(await kv.get("dayrep_last")) || berlinEpoch(today, "00:00");
+    const S = { n: 0, sum: 0, on: 0, vo: 0, lief: 0 };
+    for (const ym of [...new Set([ymOf(from), ymOf(now)])]) {
+      let cursor;
+      do {
+        const r = await kv.list({ prefix: "led:" + ym + ":", cursor, limit: 1000 });
+        for (const k of r.keys) { const e = await getJSON(kv, k.name); if (!e || e.t <= from || e.t > now) continue; const v = vatSplit(e); S.n++; S.sum += v.total; if (e.pay === "online") S.on += v.total; else S.vo += v.total; if (e.type === "Lieferung") S.lief++; }
+        cursor = r.list_complete ? null : r.cursor;
+      } while (cursor);
+    }
+    let open = 0, wa = 0;
+    for (const o of await listOrders(kv)) { if (o.t <= from || o.t > now) continue; if (o.pay === "wa") wa++; else if (o.pay === "vorort" && o.invEmail && !o.cashPaid) open++; }
+    const eu = (c) => (c / 100).toFixed(2).replace(".", ",") + " €";
+    const text = "📊 Tagesbericht " + new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit" }).format(new Date(now)) + "\n\n" + S.n + " Bestellungen über die Website: " + eu(S.sum) + "\n• online bezahlt: " + eu(S.on) + "\n• Zahlung vor Ort: " + eu(S.vo) + "\n• davon Lieferungen: " + S.lief + (wa ? "\n• WhatsApp-Anfragen: " + wa : "") + (open ? "\n\n🧾 " + open + " Vor-Ort-Bestellung(en) mit Rechnungswunsch noch nicht als bezahlt markiert." : "");
+    for (const cid of await tgRecipients(env)) await tgApi(env, "sendMessage", { chat_id: cid, text });
+    await kv.put("dayrep_last", String(now));
+  } catch (e) { console.log("Tagesbericht-Fehler", String(e)); }
+}
+// ---------- Bewertungs-Erinnerung (nur mit Häkchen beim Bestellen), am Folgetag um 11 Uhr ----------
+async function reviewMails(env) {
+  try {
+    const kv = env.DATA, now = Date.now(), bn = berlinNow(), today = berlinDate(now);
+    if (!env.RESEND_API_KEY || bn.m < 11 * 60 || bn.m > 12 * 60 || (await kv.get("rvday:" + today))) return;
+    await kv.put("rvday:" + today, "1", { expirationTtl: 3 * 86400 });
+    const yest = berlinDate(now - 86400000);
+    const pid = await kv.get("gplace");
+    const link = pid ? "https://search.google.com/local/writereview?placeid=" + encodeURIComponent(pid) : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent("Pizza & Baguettehaus am Königspalast Krefeld");
+    for (const o of await listOrders(kv)) {
+      if (!o.review || o.reviewSent || !o.email || o.pay === "wa" || berlinDate(o.t) !== yest) continue;
+      const mk = "rvm:" + (await shortHash(o.email.toLowerCase()));
+      if (await kv.get(mk)) continue;
+      const ok = await sendMail(env, o.email, "Hat's geschmeckt? ⭐", "Hallo " + o.name + ",\n\nvielen Dank für deine Bestellung gestern. Wir hoffen, es hat dir geschmeckt!\n\nWenn du magst, bewerte uns kurz bei Google. Das dauert eine Minute und hilft uns sehr:\n" + link + "\n\nDiese E-Mail bekommst du nur einmal, weil du es bei der Bestellung angekreuzt hast.\n\nPizza & Baguettehaus am Königspalast");
+      if (ok) { o.reviewSent = true; await setJSON(kv, "o:" + o.id, o, { expirationTtl: ORDER_TTL_S }); await kv.put(mk, "1", { expirationTtl: 60 * 86400 }); }
+    }
+  } catch (e) { console.log("Bewertungs-Mail-Fehler", String(e)); }
 }
 const addrPartsOf = (b) => { const a = b && b.addrParts && typeof b.addrParts === "object" ? b.addrParts : {}; return { street: str(a.street, 100), hnr: str(a.hnr, 12), plz: str(a.plz, 5), city: str(a.city, 60) }; };
 const cartOf = (c) => {
@@ -153,7 +287,7 @@ async function saveOrder(b, req, env) {
   if (!name || !lines.length) return json({ error: "invalid" }, 400);
   const email = str(b.email, 120);
   if (!okMail(email)) return json({ error: "email" }, 400);
-  const wt = await checkWish(env, b.time);
+  const wt = await checkWish(env, b.time, b.date);
   if (wt.error) return json({ error: "time" }, 400);
   // Missbrauchsschutz: gekürzter Prüfwert der IP-Adresse, nur für das Zählen
   const ipHash = await shortHash(req.headers.get("cf-connecting-ip") || "unbekannt");
@@ -171,6 +305,7 @@ async function saveOrder(b, req, env) {
     type: lief ? "Lieferung" : "Abholung",
     addr: lief ? str(b.addr, 200) : "",
     time: wt.time,
+    date: wt.date,
     note: str(b.note, 500),
     lines,
     total: Math.max(0, Math.min(5000, Number(b.total) || 0)),
@@ -459,7 +594,7 @@ function priceCart(menu, PR, mode, cart) {
     if (sel.noSauce === true) det.push("Keine Soße");
     if (tops.length) det.push((o.incl ? "Zutaten: " : "Extra: ") + tops.join(", "));
     if (sel.bake) det.push("Überbacken");
-    out.push({ name, det, note: str(l.note, 200), qty, unit, cat: c, desc: String(it[1] || "") });
+    out.push({ key, name, det, note: str(l.note, 200), qty, unit, cat: c, desc: String(it[1] || "") });
   }
   return { lines: out, sum: Math.round(out.reduce((a, x) => a + x.unit * x.qty, 0) * 100) / 100 };
 }
@@ -485,7 +620,7 @@ async function handleCheckout(b, req, env) {
   await kv.put(rlKey, String(cnt + 1), { expirationTtl: 1200 });
   // Hat der Inhaber auf "geschlossen" gestellt?
   const st = await getJSON(kv, "status");
-  if (st && st.state === "closed" && st.expires > Date.now()) return json({ error: "closed" }, 409);
+  if (st && st.state === "closed" && st.expires > Date.now() && !String(b.date || "").trim()) return json({ error: "closed" }, 409);
   const name = str(b.name, 80);
   const lief = b.fulfil === "Lieferung";
   if (!name) return json({ error: "name" }, 400);
@@ -501,7 +636,7 @@ async function handleCheckout(b, req, env) {
   if (lief && addr.length < 6) return json({ error: "addr" }, 400);
   const billAddr = !lief && invEmail ? str(b.billAddr, 200) : "";
   if (!lief && invEmail) { const v0 = await checkAddr(env, billAddr); if (v0.error) return json({ error: "billaddr" }, 422); }
-  const wt = await checkWish(env, b.time);
+  const wt = await checkWish(env, b.time, b.date);
   if (wt.error) return json({ error: "time" }, 400);
   // Preise serverseitig nachrechnen
   const menu = await (await env.ASSETS.fetch(new URL("/menu.json", req.url))).json();
@@ -511,6 +646,10 @@ async function handleCheckout(b, req, env) {
   const mode = lief ? "e" : pm && pm.until > Date.now() && (pm.mode === "d" || pm.mode === "e") ? pm.mode : autoMode();
   const priced = priceCart(menu, PR, mode, b.cart);
   if (priced.error) return json({ error: "cart" }, 400);
+  const ops = await getOps(env);
+  if (lief && ops.delOff && !wt.date) return json({ error: "nodelivery" }, 409);
+  const so = soldOutHit(menu, b.cart, ops.out);
+  if (so) return json({ error: "soldout", item: so }, 409);
   const acctData = { name, phone, ...(lief || invEmail ? addrPartsOf(b) : {}), fulfil: lief ? "Lieferung" : "Abholung", cart: cartOf(b.cart) };
   let fee = 0, km = 0, tip = 0, driveMin = 0;
   if (lief) {
@@ -538,16 +677,16 @@ async function handleCheckout(b, req, env) {
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
   if (vorOrt) {
-    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, invEmail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
+    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, date: wt.date, review: !!b.review, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, invEmail, billAddr, phone, items: priced.lines.map((x) => ({ key: x.key, name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
     await setOrderNo(kv, rec, false);
     await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
     await addLedger(env, rec);
     await notifyTelegram(env, rec);
     await sendConfirm(env, rec);
     await saveAcctFromOrder(env, b.token, acctData, rec);
-    return json({ ok: true, no: rec.no });
+    return json({ ok: true, no: rec.no, id });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, cid: ((await acctFromToken(env, b.token)) || {}).id || null, cart: acctData.cart, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, date: wt.date, review: !!b.review, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ key: x.key, name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, cid: ((await acctFromToken(env, b.token)) || {}).id || null, cart: acctData.cart, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -614,7 +753,7 @@ async function notifyTelegram(env, rec) {
       "",
       "Name: " + rec.name,
       rec.type === "Lieferung" ? "Lieferung an: " + rec.addr + (rec.km ? " (" + rec.km + " km)" : "") : "Abholung",
-      rec.time ? "Wunschzeit: " + rec.time : "",
+      rec.time ? (rec.date ? "📅 VORBESTELLUNG für " : "⏰ Wunschzeit: ") + wishStr(rec) : "",
       rec.phone ? "Telefon: " + rec.phone : "",
       rec.email ? "E-Mail: " + rec.email : "",
       "",
@@ -632,7 +771,7 @@ async function notifyTelegram(env, rec) {
       const r = await fetch("https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: cid, text }),
+        body: JSON.stringify({ chat_id: cid, text, reply_markup: rec.no ? { inline_keyboard: [[{ text: "✅ Angenommen", callback_data: "st:" + rec.no + ":a" }, { text: "🍕 Fertig", callback_data: "st:" + rec.no + ":f" }].concat(rec.type === "Lieferung" ? [{ text: "🛵 Unterwegs", callback_data: "st:" + rec.no + ":u" }] : [])] } : undefined }),
       });
       if (r.ok) okN++; else lastErr = r.status;
     }
@@ -692,11 +831,13 @@ async function handleApi(req, env) {
     if (path === "/prices") return json((await getJSON(kv, "prices")) || {});
     if (path === "/events") return json((await getJSON(kv, "events")) || {});
     if (path === "/rating") return json((await getJSON(kv, "rating")) || {});
+    if (path === "/ops") { const o = await getOps(env); return json({ wait: o.wait || null, delOff: !!o.delOff, out: o.out || [] }); }
+    if (path === "/popular") return json((await getJSON(kv, "popular")) || { keys: [] });
     if (path === "/ordno") {
       const oid = new URL(req.url).searchParams.get("id") || "";
       if (!/^\d+:[a-z0-9]+$/.test(oid)) return json({}, 400);
       const o = await getJSON(kv, "o:" + oid);
-      return json(o ? { no: o.no || null, paid: !!o.paid } : {});
+      return json(o ? { no: o.no || null, paid: !!o.paid, st: o.status || "", type: o.type || "" } : {});
     }
     if (path === "/config") return json({ route: !!env.GOOGLE_MAPS_KEY, pay: PAY_ENABLED && !!env.STRIPE_SECRET_KEY && !!env.STRIPE_WEBHOOK_SECRET, tg: (await kv.get("tgstatus")) || "-", rt: (await kv.get("rtstatus")) || "-", inv: !!env.RESEND_API_KEY, acct: !!env.DB, ts: env.TURNSTILE_SECRET ? TS_SITEKEY : "", tsv: (await kv.get("tsstatus")) || "-", iv: (await kv.get("invstatus")) || "-" });
     return json({ error: "not found" }, 404);
@@ -864,10 +1005,13 @@ async function tgUpdates(env, kv, ids) {
         const parts = String(cq.data || "").split(":");
         await tgApi(env, "answerCallbackQuery", { callback_query_id: cq.id });
         if (ids.includes(from) && (parts[0] === "ja" || parts[0] === "nein")) out.push({ ans: parts[0], id: parts[1] });
+        if (ids.includes(from) && parts[0] === "st") await setOrderStatus(env, parts[1], parts[2], from);
       } else if (u.message && u.message.text && ids.includes(String(u.message.chat.id))) {
         const raw = u.message.text.trim().toLowerCase();
         const pm = raw.match(/^(?:nr\.?\s*|#)?(o?\d{1,6})\s*(?:ist\s+)?bezahlt[.!]?$/) || raw.match(/^bezahlt:?\s*(?:nr\.?\s*|#)?(o?\d{1,6})[.!]?$/);
         if (pm) { await markPaid(env, pm[1].toUpperCase(), String(u.message.chat.id)); continue; }
+        const oc = await opsCommand(env, raw);
+        if (oc) { await tgApi(env, "sendMessage", { chat_id: String(u.message.chat.id), text: oc }); continue; }
         const tx = raw.replace(/[^a-zäöü]/g, "");
         if (tx === "ja" || tx === "nein") out.push({ ans: tx, at: u.message.date * 1000 });
       }
@@ -1138,23 +1282,24 @@ async function sendConfirm(env, rec) {
   const kv = env.DATA;
   try {
     if (!env.RESEND_API_KEY || !rec || !rec.email || rec.confMail) return;
+    const ops = await getOps(env), prep = ops.wait || 35;
     const eu = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " €";
     const lief = rec.type === "Lieferung", wa = rec.pay === "wa";
     const totalN = typeof rec.amount === "number" ? rec.amount / 100 : (rec.total || 0) + (rec.fee || 0) + (rec.tip || 0);
     const wish = String(rec.time || "").trim();
     const hasWish = /\d/.test(wish);
-    const wishT = hasWish ? wish + (/uhr/i.test(wish) ? "" : " Uhr") : "";
+    const wishT = hasWish ? wishStr(rec) : "";
     let when, subj = "";
     if (wa) when = "Das ist eine unverbindliche Anfrage über WhatsApp. Sie gilt erst, wenn wir sie dir in WhatsApp bestätigt haben. Bitte schick dafür die vorbereitete WhatsApp-Nachricht ab.";
     else if (lief && hasWish) { when = "Lieferung zu deiner Wunschzeit: " + wishT + ". Falls das nicht klappt, melden wir uns telefonisch bei dir."; subj = " · Lieferung um " + wishT; }
     else if (lief) {
       const base = rec.paid ? rec.paidAt || Date.now() : rec.t;
       const drive = Math.max(0, Math.ceil(Number(rec.driveMin) || 0));
-      const arr = Math.ceil((base + (35 + drive) * 60000) / 300000) * 300000;
+      const arr = Math.ceil((base + (prep + drive) * 60000) / 300000) * 300000;
       const hm = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit" }).format(new Date(arr));
-      when = "Voraussichtliche Ankunft: ca. " + hm + " Uhr (ca. 35 Minuten Zubereitung plus ca. " + drive + " Minuten Fahrzeit).";
+      when = "Voraussichtliche Ankunft: ca. " + hm + " Uhr (ca. " + prep + " Minuten Zubereitung plus ca. " + drive + " Minuten Fahrzeit).";
       subj = " · Lieferung gegen " + hm + " Uhr";
-    } else when = hasWish ? "Abholung zu deiner Wunschzeit: " + wishT + "." : "Abholung: Wir bereiten deine Bestellung sofort zu.";
+    } else when = hasWish ? "Abholung zu deiner Wunschzeit: " + wishT + "." : (ops.wait ? "Abholung: Deine Bestellung ist in ca. " + ops.wait + " Minuten fertig. Wir schicken dir eine E-Mail, sobald sie bereitliegt." : "Abholung: Wir bereiten deine Bestellung sofort zu. Wir schicken dir eine E-Mail, sobald sie bereitliegt.");
     const pay = wa ? null : rec.paid ? "Bezahlt: online (" + eu(totalN) + ")." : "Bitte bezahle " + eu(totalN) + " bei " + (lief ? "der Lieferung" : "der Abholung") + " bar oder mit Karte.";
     const inv = wa || !rec.invEmail ? null : rec.paid ? "Deine Rechnung bekommst du in einer eigenen E-Mail." : "Deine Rechnung schicken wir dir per E-Mail, sobald du bezahlt hast.";
     const body = [
@@ -1249,7 +1394,7 @@ async function addLedger(env, rec) {
   try {
     if (!rec || !rec.id || (!rec.paid && rec.pay !== "vorort")) return;
     const ts = rec.paid ? rec.paidAt || rec.t : rec.t;
-    const e = { id: rec.id, no: rec.no || "", t: ts, pay: rec.paid ? "online" : "vorort", type: rec.type, invNo: rec.invNo || "", items: (rec.items || []).map((x) => ({ name: x.name, qty: x.qty, unit: x.unit, cat: x.cat })), fee: rec.fee || 0, tip: rec.tip || 0 };
+    const e = { id: rec.id, no: rec.no || "", t: ts, pay: rec.paid ? "online" : "vorort", type: rec.type, invNo: rec.invNo || "", items: (rec.items || []).map((x) => ({ key: x.key || "", name: x.name, qty: x.qty, unit: x.unit, cat: x.cat })), fee: rec.fee || 0, tip: rec.tip || 0 };
     await setJSON(env.DATA, "led:" + ymOf(ts) + ":" + rec.id, e, { expirationTtl: 400 * 86400 });
   } catch (e) {
     console.log("Ledger-Fehler", String(e));
@@ -1297,7 +1442,9 @@ async function monthlyReport(env, forceMonth) {
     const [yy, mm] = ym.split("-");
     const text = "Umsatzaufstellung " + mm + "/" + yy + " (Bestellungen über die Website)\n\n" + block("GESAMT", T) + "\n\n" + block("Online bezahlt (Stripe)", S.online) + "\n\n" + block("Zahlung vor Ort (bar oder Karte, bitte mit der Kasse abgleichen)", S.vorort) + "\n\nIm Anhang: alle Bestellungen einzeln und alle Artikel mit Steuersatz (CSV-Dateien, mit Excel zu öffnen).\n\nHinweise: Rückerstattungen in Stripe sind nicht abgezogen. Bestellungen per WhatsApp oder Telefon sind nicht enthalten. Vor-Ort-Bestellungen sind enthalten, auch wenn sie nicht abgeholt wurden. Steuersätze: Speisen 7 %, Getränke 19 %, Liefergebühr anteilig; Trinkgeld als nicht umsatzsteuerbar behandelt (bitte vom Steuerberater prüfen lassen).";
     const csv = (s) => b64(new TextEncoder().encode(String.fromCharCode(65279) + s));
-    const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [INV_COPY_TO], subject: "Umsatzaufstellung " + mm + "/" + yy + ": " + eu(T.total) + " € (" + T.n + " Bestellungen)", text, attachments: [{ filename: "Umsatz-" + ym + "-Bestellungen.csv", content: csv(rows.join("\r\n")) }, { filename: "Umsatz-" + ym + "-Artikel.csv", content: csv(arts.join("\r\n")) }] }) });
+    let custCsv = "";
+    try { if (env.DB) { const D = await db(env); const cr = await D.prepare("SELECT id, email, name, phone, street, hnr, plz, city, created, last_seen FROM customers ORDER BY id").all(); const q = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"'; custCsv = ["Nr.;E-Mail;Name;Telefon;Straße;Nr.;PLZ;Ort;Konto seit;Zuletzt aktiv"].concat((cr.results || []).map((c) => [c.id, c.email, c.name, c.phone, c.street, c.hnr, c.plz, c.city, dt(c.created), dt(c.last_seen)].map(q).join(";"))).join("\r\n"); } } catch (e) {}
+    const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ from: env.INVOICE_FROM || "Pizza & Baguettehaus am Königspalast <rechnung@pizzeria-koenigspalast.de>", to: [INV_COPY_TO], subject: "Umsatzaufstellung " + mm + "/" + yy + ": " + eu(T.total) + " € (" + T.n + " Bestellungen)", text, attachments: [{ filename: "Umsatz-" + ym + "-Bestellungen.csv", content: csv(rows.join("\r\n")) }, { filename: "Umsatz-" + ym + "-Artikel.csv", content: csv(arts.join("\r\n")) }].concat(custCsv ? [{ filename: "Sicherung-Kundenkonten-" + ym + ".csv", content: csv(custCsv) }] : []) }) });
     if (r.ok && !forceMonth) await kv.put("rep:" + ym, String(now), { expirationTtl: 60 * 86400 });
     await kv.put("repstatus", (r.ok ? "ok " : "fehler-" + r.status + " ") + ym);
     return r.ok;
@@ -1341,7 +1488,7 @@ export default {
   },
   // Cron: "0 */6 * * *" = 00:00, 06:00, 12:00, 18:00 UTC
   async scheduled(event, env, ctx) {
-    if (event.cron === "*/2 * * * *") ctx.waitUntil(Promise.all([runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))), refreshRating(env)]));
-    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env), cleanupAccounts(env)]));
+    if (event.cron === "*/2 * * * *") ctx.waitUntil(Promise.all([runAsk(env).catch((e) => console.log("Rückfrage-Fehler", String(e))), refreshRating(env), dailyReport(env), reviewMails(env)]));
+    else ctx.waitUntil(Promise.all([refreshEvents(env), monthlyReport(env), cleanupAccounts(env), computePopular(env)]));
   },
 };
