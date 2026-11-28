@@ -364,6 +364,8 @@ async function acctFromToken(env, token) {
   } catch (e) { return null; }
 }
 const pubProfile = (c) => ({ email: c.email, name: c.name || "", phone: c.phone || "", street: c.street || "", hnr: c.hnr || "", plz: c.plz || "", city: c.city || "", fulfil: c.fulfil || "" });
+// Treue-Aktion: jede 10. Bestellung mit Kundenkonto ist 10 % günstiger (WhatsApp-Anfragen zählen nicht)
+async function loyalCount(D, cid) { const r = await D.prepare("SELECT COUNT(*) AS n FROM cust_orders WHERE cid = ? AND pay != 'wa'").bind(cid).first(); return (r && r.n) || 0; }
 async function custOrders(D, cid, n) {
   const r = await D.prepare("SELECT no, t, type, pay, total, lines, cart FROM cust_orders WHERE cid = ? ORDER BY t DESC LIMIT ?").bind(cid, n).all();
   const pj = (s, d) => { try { return JSON.parse(s); } catch (e) { return d; } };
@@ -446,7 +448,7 @@ async function handleAcct(path, b, req, env) {
     const cid = r.meta.last_row_id;
     const token = await newSession(D, cid);
     if (env.RESEND_API_KEY) await sendMail(env, email, "Willkommen: Dein Kundenkonto ist eingerichtet", "Hallo " + name + ",\n\ndein Kundenkonto bei pizzeria-koenigspalast.de ist eingerichtet. Ab jetzt sind deine Angaben beim Bestellen schon ausgefüllt, und unter „Mein Konto“ findest du alle deine Bestellungen.\n\nWenn du dieses Konto nicht angelegt hast, antworte bitte auf diese E-Mail. Wir löschen es dann.\n\nPizza & Baguettehaus am Königspalast");
-    return json({ token, profile: pubProfile({ email, name }), orders: [] });
+    return json({ token, profile: pubProfile({ email, name }), orders: [], loyal: 0 });
   }
   if (path === "/acct/login") {
     if (await limited("login", 10)) return json({ error: "limit" }, 429);
@@ -456,7 +458,7 @@ async function handleAcct(path, b, req, env) {
     if (!ok) { await sleep(600); return json({ error: "login" }, 401); }
     await D.prepare("UPDATE customers SET last_seen = ? WHERE id = ?").bind(now, c.id).run();
     const token = await newSession(D, c.id);
-    return json({ token, profile: pubProfile(c), orders: await custOrders(D, c.id, 30) });
+    return json({ token, profile: pubProfile(c), orders: await custOrders(D, c.id, 30), loyal: await loyalCount(D, c.id) });
   }
   if (path === "/acct/reset-code") {
     if (!env.RESEND_API_KEY) return json({ error: "nomail" }, 503);
@@ -486,13 +488,13 @@ async function handleAcct(path, b, req, env) {
     const h = await pwHash(b.password);
     await D.batch([D.prepare("UPDATE customers SET pw = ?, salt = ?, last_seen = ? WHERE id = ?").bind(h.hash, h.salt, now, c.id), D.prepare("DELETE FROM sessions WHERE cid = ?").bind(c.id)]);
     const token = await newSession(D, c.id);
-    return json({ token, profile: pubProfile(c), orders: await custOrders(D, c.id, 30) });
+    return json({ token, profile: pubProfile(c), orders: await custOrders(D, c.id, 30), loyal: await loyalCount(D, c.id) });
   }
   const c = await acctFromToken(env, b.token);
   if (!c) return json({ error: "auth" }, 401);
   if (path === "/acct/me") {
     await D.prepare("UPDATE customers SET last_seen = ? WHERE id = ?").bind(now, c.id).run();
-    return json({ profile: pubProfile(c), orders: await custOrders(D, c.id, 30) });
+    return json({ profile: pubProfile(c), orders: await custOrders(D, c.id, 30), loyal: await loyalCount(D, c.id) });
   }
   if (path === "/acct/update") {
     const p = { name: str(b.name, 80), phone: str(String(b.phone || "").replace(/[^\d+ ]/g, ""), 20), ...addrPartsOf(b) };
@@ -650,6 +652,17 @@ async function handleCheckout(b, req, env) {
   if (lief && ops.delOff && !wt.date) return json({ error: "nodelivery" }, 409);
   const so = soldOutHit(menu, b.cart, ops.out);
   if (so) return json({ error: "soldout", item: so }, 409);
+  // Treue-Rabatt: 10 % auf Speisen und Getränke bei jeder 10. Bestellung mit Kundenkonto (nicht auf Liefergebühr und Trinkgeld)
+  const origSum = priced.sum;
+  let loyal = 0;
+  try {
+    const lc = b.token && env.DB ? await acctFromToken(env, b.token) : null;
+    if (lc && (await loyalCount(await db(env), lc.id)) % 10 === 9) {
+      for (const x of priced.lines) { const u = Math.round(x.unit * 100), d = Math.round(u * 0.9); if (d < u) { x.det.push("10 % Treue-Rabatt (statt " + eurS(x.unit) + ")"); x.unit = d / 100; } }
+      priced.sum = Math.round(priced.lines.reduce((a, x) => a + Math.round(x.unit * 100) * x.qty, 0)) / 100;
+      loyal = Math.round((origSum - priced.sum) * 100) / 100;
+    }
+  } catch (e) {}
   const acctData = { name, phone, ...(lief || invEmail ? addrPartsOf(b) : {}), fulfil: lief ? "Lieferung" : "Abholung", cart: cartOf(b.cart) };
   let fee = 0, km = 0, tip = 0, driveMin = 0;
   if (lief) {
@@ -661,9 +674,9 @@ async function handleCheckout(b, req, env) {
     const r = await routeKm(env, a);
     if (r.error) return json({ error: r.error === "addr" ? "addr" : "route" }, r.error === "addr" ? 422 : 502);
     const t = tierFor(r.km);
-    if (priced.sum < t.min) {
+    if (origSum < t.min) {
       if (!b.tipFill) return json({ error: "min", min: t.min }, 400);
-      tip = Math.round((t.min - priced.sum) * 100) / 100; // Fehlbetrag wird als Trinkgeld aufgefüllt
+      tip = Math.round((t.min - origSum) * 100) / 100; // Fehlbetrag wird als Trinkgeld aufgefüllt
     }
     fee = t.fee;
     km = Math.round(r.km * 10) / 10;
@@ -677,7 +690,7 @@ async function handleCheckout(b, req, env) {
   const id = `${t0}:${Math.random().toString(36).slice(2, 8)}`;
   const lines = priced.lines.map((x) => `${x.qty}x ${x.name} – ${eurS(x.unit * x.qty)}` + x.det.map((d) => `\n   ${d}`).join("") + (x.note ? `\n   Anmerkung: ${x.note}` : ""));
   if (vorOrt) {
-    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, date: wt.date, review: !!b.review, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, invEmail, billAddr, phone, items: priced.lines.map((x) => ({ key: x.key, name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
+    const rec = { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, date: wt.date, review: !!b.review, loyal, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, invEmail, billAddr, phone, items: priced.lines.map((x) => ({ key: x.key, name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), paid: false, pay: "vorort" };
     await setOrderNo(kv, rec, false);
     await setJSON(kv, `o:${id}`, rec, { expirationTtl: ORDER_TTL_S });
     await addLedger(env, rec);
@@ -686,7 +699,7 @@ async function handleCheckout(b, req, env) {
     await saveAcctFromOrder(env, b.token, acctData, rec);
     return json({ ok: true, no: rec.no, id });
   }
-  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, date: wt.date, review: !!b.review, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ key: x.key, name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, cid: ((await acctFromToken(env, b.token)) || {}).id || null, cart: acctData.cart, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
+  await setJSON(kv, `p:${id}`, { id, t: t0, name, type: lief ? "Lieferung" : "Abholung", addr, time: wt.time, date: wt.date, review: !!b.review, loyal, note: str(b.note, 500), lines, total: priced.sum, fee, km, tip, driveMin, email: mail, billAddr, phone, items: priced.lines.map((x) => ({ key: x.key, name: x.name, det: x.det, note: x.note, qty: x.qty, unit: x.unit, cat: x.cat, desc: x.desc })), invEmail, cid: ((await acctFromToken(env, b.token)) || {}).id || null, cart: acctData.cart, paid: false, pay: "stripe" }, { expirationTtl: 7200 });
   // Stripe-Checkout-Sitzung anlegen
   const origin = new URL(req.url).origin;
   const p = new URLSearchParams();
@@ -759,6 +772,7 @@ async function notifyTelegram(env, rec) {
       "",
       ...(rec.lines || []),
       rec.tip ? "Trinkgeld (Aufrundung auf Mindestbestellwert): " + eurS(rec.tip) : "",
+      rec.loyal ? "🎁 Treue-Rabatt (10. Bestellung): −" + eurS(rec.loyal) + " (schon abgezogen)" : "",
       rec.note ? "\nAnmerkung: " + rec.note : "",
       "",
       (rec.paid ? "Gesamt bezahlt: " : "Zu zahlen bei Abholung/Lieferung (bar oder Karte): ") + eurS(total) + (rec.fee ? " (inkl. " + eurS(rec.fee) + " Liefergebühr)" : ""),
