@@ -1303,7 +1303,7 @@ async function selfCheck(env, manual) {
   await step("E-Mail-Versand (Resend)", "Resend: RESEND_API_KEY gültig? Domain pizzeria-koenigspalast.de noch verifiziert (DNS-Einträge)?", async () => { if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY fehlt"); const st = (await kv.get("mailstatus")) || ""; if (/^fehler/.test(st)) throw new Error("Letzter Mailversand fehlgeschlagen: " + st); return st ? "zuletzt " + st.split(" ")[0] : "noch kein Versand"; });
   await step("Rechnungen", "Resend und Rechnungs-PDF prüfen.", async () => { const st = (await kv.get("invstatus")) || "-"; if (/fehler|ausnahme/.test(st)) throw new Error("Letzte Rechnung: " + st); return st; });
   await step("Roboter-Prüfung (Turnstile)", "Cloudflare Turnstile: Secret TURNSTILE_SECRET richtig eingetragen (der lange Secret Key)?", async () => { if (!env.TURNSTILE_SECRET) return "ausgeschaltet"; const st = (await kv.get("tsstatus")) || "-"; if (/^(fehler|ausnahme)/.test(st) && age(st) < 2 * 86400000) throw new Error("Letzte Prüfung: " + st); return st === "-" ? "noch nicht benutzt" : st.split(" ")[0]; });
-  await step("Veranstaltungen (YAYLA Arena)", "Veranstaltungskalender der Arena erreichbar? Hat sich die Seite der Arena geändert?", async () => { const e = await getJSON(kv, "events"); if (!e || !e.updated) throw new Error("Keine Termine gespeichert"); if (now - Date.parse(e.updated) > 2 * 86400000) throw new Error("Termine seit über 2 Tagen nicht aktualisiert"); return (e.events || []).length + " Termine"; });
+  await step("Veranstaltungen (YAYLA Arena)", "Veranstaltungskalender der Arena erreichbar? Hat sich die Seite der Arena geändert?", async () => { let e = await getJSON(kv, "events"); if (!e || !e.updated || now - Date.parse(e.updated) > 2 * 86400000) { await refreshEvents(env); e = await getJSON(kv, "events"); } if (!e || !e.updated) throw new Error("Keine Termine gespeichert"); if (now - Date.parse(e.updated) > 2 * 86400000) throw new Error("Termine seit über 2 Tagen nicht aktualisiert"); return (e.events || []).length + " Termine"; });
   await step("Monatsabrechnung", "Resend prüfen; die Abrechnung kommt am 1. des Monats.", async () => { const st = (await kv.get("repstatus")) || "-"; if (/fehler|ausnahme/.test(st)) throw new Error("Letzte Abrechnung: " + st); return st; });
   const badList = res.filter((x) => !x.ok);
   await setJSON(kv, "selfcheck", { t: now, res }, { expirationTtl: 30 * 86400 });
@@ -1506,7 +1506,7 @@ async function refreshEvents(env) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + k, 1));
     const url = `https://yayla-arena.de/veranstaltungskalender/?_m=${d.getUTCMonth() + 1}&_y=${d.getUTCFullYear()}`;
     try {
-      const r = await fetch(url);
+      const r = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; pizzeria-koenigspalast.de Veranstaltungskalender)", "accept-language": "de-DE,de;q=0.9" } });
       if (!r.ok) continue;
       for (const e of parseEvents(await r.text())) all.set(e._k, e);
     } catch (e) {
@@ -1518,6 +1518,7 @@ async function refreshEvents(env) {
     .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
   if (!events.length) {
     console.log("Keine Termine gefunden, alte Daten bleiben erhalten.");
+    await env.DATA.put("evstatus", "keine-termine " + new Date().toISOString());
     return;
   }
   await setJSON(env.DATA, "events", { updated: new Date().toISOString(), events });
